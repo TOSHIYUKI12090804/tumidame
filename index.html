@@ -45,7 +45,7 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 .t.redglow{box-shadow:inset 0 2px 1px #fff,0 0 0 2px #ff4d6d,0 var(--d) 0 #138a5c,0 0 14px #ff4d6d}
 /* ---------- 卓 ---------- */
 #planeWrap{position:absolute;left:250px;top:-62px;width:780px;height:780px;perspective:1500px;perspective-origin:50% 30%;pointer-events:none}
-#plane{position:absolute;inset:0;transform:rotateX(34deg) scale(.93);transform-origin:50% 58%;transform-style:preserve-3d}
+#plane{position:absolute;inset:0;transform:rotateX(34deg) scale(.93);transform-origin:50% 58%;transform-style:flat}
 .tabletop{position:absolute;inset:0;border-radius:22px;background-color:#13603f;background-size:340px 340px;box-shadow:0 0 0 18px #4a2a14,0 0 0 20px #7a4a22,0 0 0 26px #2a160a,0 0 0 28px rgba(255,200,120,.25),0 40px 80px 20px rgba(0,0,0,.75)}
 .tabletop::after{content:'';position:absolute;inset:0;border-radius:22px;background:radial-gradient(ellipse at 50% 42%,rgba(255,240,200,.10),rgba(0,0,0,0) 45%,rgba(0,0,0,.35) 100%);box-shadow:inset 0 0 40px rgba(0,0,0,.5)}
 .layer{position:absolute;inset:0;transform-origin:50% 50%}
@@ -243,6 +243,61 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 
 #cheatbar{position:absolute;right:16px;top:396px;display:flex;flex-direction:column;gap:10px;z-index:12;width:140px}
 #cheatbar .cbtn{font-size:18px;padding:10px 0;width:100%}
+/* ---- 文字を大きく(読みやすさ調整) ---- */
+#center .kyoku{font-size:36px}
+#center .sub{font-size:17px}
+#center .rem{font-size:18px}
+#center .rem b{font-size:26px}
+.cseat{font-size:18px}
+.cseat .w{width:28px;height:28px;line-height:28px;font-size:17px}
+#info{font-size:19px}
+.pill{padding:8px 16px}
+#tip{font-size:17px}
+.pcard{width:168px;padding:9px}
+.pcard .av{width:80px;height:80px}
+.pcard .nm{font-size:18px}
+.pcard .ttl{font-size:13px}
+.pcard .sc{font-size:25px}
+.badge{font-size:13px;padding:3px 9px}
+.pcard.me{width:112px;padding:7px}
+.pcard.me .av{width:58px;height:58px}
+.pcard.me .sc{font-size:20px}
+.pcard.me .badge{font-size:12px;padding:2px 7px}
+.bubble{font-size:18px;max-width:300px}
+#toast .tt{font-size:21px}
+#dora{font-size:16px}
+.dlbl{font-size:22px}
+.dind{font-size:13px}
+#menuBtn{left:16px;right:auto;top:96px;font-size:17px}
+#quick{left:14px;top:430px;gap:5px}
+.qbtn{width:112px;font-size:16px;padding:6px 0}
+#cheatbar{top:420px;width:150px}
+#cheatbar .cbtn{font-size:21px}
+.helptext{font-size:17px}
+.row .lbl{font-size:16px;width:150px}
+.seg button{font-size:16px}
+.panel h2{font-size:28px}
+.yakulist{font-size:21px}
+.deltas .d{font-size:16px}
+.charsel .c{font-size:14px}
+.charsel .c small{font-size:12px}
+/* 相手のカードは横長に */
+.pcard:not(.me){width:262px;display:grid;grid-template-columns:76px 1fr;grid-template-rows:auto auto auto auto;column-gap:10px;text-align:left;align-items:center;padding:9px 12px}
+.pcard:not(.me) .av{grid-row:1/5;width:72px;height:72px;margin:0}
+.pcard:not(.me) .nm{grid-column:2;line-height:1.15}
+.pcard:not(.me) .ttl{grid-column:2}
+.pcard:not(.me) .sc{grid-column:2;line-height:1.1}
+.pcard:not(.me) .gauge{grid-column:1/3;justify-content:flex-start;margin-top:6px}
+.pcard:not(.me) .badges{grid-column:1/3;justify-content:flex-start;margin-top:5px}
+.pcard:not(.me) .gauge i{width:20px}
+.pcard.me{width:112px;bottom:14px !important}
+#hand{left:136px}
+#info{left:136px}
+#dora{max-width:none;flex-wrap:nowrap}
+#menuBtn{left:auto;right:290px;top:12px}
+#quick{top:392px}
+#cheatbar{top:378px;gap:8px}
+#cheatbar .cbtn{padding:9px 0}
 </style>
 </head>
 <body>
@@ -842,7 +897,7 @@ class Game {
     const S = this.S;
     this.handNo++;
     for (const p of this.P) {
-      Object.assign(p, { hand: [], melds: [], river: [], discardKinds: new Set(), riichi: false, dbl: false, ippatsu: false, furitenTemp: false, riichiFuriten: false, plan: null, _planNext: null, stacked: 0, cheatedTurn: false, kita: 0, kitaIds: [], dead: false });
+      Object.assign(p, { hand: [], melds: [], river: [], discardKinds: new Set(), riichi: false, dbl: false, ippatsu: false, furitenTemp: false, riichiFuriten: false, plan: null, _planNext: null, stacked: 0, cheatedTurn: false, kita: 0, kitaIds: [], dead: false, lastOff: null });
     }
     this.anyCall = false; this.kanCount = 0; this.rinIdx = 0; this.lastDiscard = null; this.events = [];
     let pool = this.setupWall();
@@ -1955,7 +2010,7 @@ const SEAT_ROT = [0, -90, 180, 90];
 // 席番号 → 画面上の位置(3人麻雀は対面が空く)
 const VP = s => (U.G && U.G.N === 3 && s === 2) ? 3 : s;
 function seatPos(s) { return [{ x: 640, y: 560 }, { x: 1150, y: 300 }, { x: 640, y: 70 }, { x: 130, y: 300 }][VP(s)]; }
-const CARD_POS = [null, { left: 1114, top: 196 }, { left: 1040, top: 14 }, { left: 16, top: 196 }];
+const CARD_POS = [null, { left: 1004, top: 232 }, { left: 1004, top: 8 }, { left: 14, top: 232 }];
 
 function meldHTML(m, cls, seatRel) {
   // m.from: 1下家 2対面 3上家
@@ -2620,7 +2675,11 @@ function onCheatButton() {
     if (p.riichi || U.turn.ctx.afterCall || p.cheatedTurn) { toast('いまはイカサマできません', 1500); return; }
     return cheatMenu();
   }
-  if (!canOffCheatUI(G)) { toast(G.turnSeat === HUMAN ? '自分の番を待ってください' : '手番外のイカサマは1巡に1回までです', 1600); return; }
+  if (!canOffCheatUI(G)) {
+    const left = p.lastOff == null ? 0 : G.N - ((G.discardNo || 0) - p.lastOff);
+    toast(p.riichi ? 'リーチ中はイカサマできません' : G.turnSeat === HUMAN ? '自分の番を待ってください' : `手番外のイカサマは1巡に1回までです（あと${left}打で使えます）`, 1800);
+    return;
+  }
   setHold(true);
   const ld = G.lastDiscard;
   const ldOk = ld && ld.seat !== HUMAN && G.P[ld.seat] && G.P[ld.seat].river.length && !G.P[ld.seat].river[G.P[ld.seat].river.length - 1].called;
