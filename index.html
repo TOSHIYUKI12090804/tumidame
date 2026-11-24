@@ -873,6 +873,7 @@ class Game {
     while (true) {
       const p = this.P[turn];
       { const r = await this.processQueue(); if (r) return r; }
+      if (this.P.every(q => q.dead)) return this.exhaustive();
       this.turnSeat = turn;
       let drawn = null;
       if (mode === 'draw') {
@@ -1299,9 +1300,9 @@ class Game {
       if (s === target || this.P[s].isHuman) continue;
       const ch = this.P[s].char;
       const me = this.P[s];
-      if (me.dead) continue;
       const myS = me.hand.length ? shanten(toCounts(me.hand), me.melds.length) : 3;
-      const risk = me.riichi ? 0.35 : myS <= 0 ? 0.5 : myS === 1 ? 0.75 : 1; // 手が良いほど慎重
+      // 手が良いほど慎重。アガリ放棄中は失うものがないので見張り役になる
+      const risk = me.dead ? 1.6 : me.riichi ? 0.35 : myS <= 0 ? 0.5 : myS === 1 ? 0.75 : 1;
       const prob = risk * Math.min(0.95, ch.accuse * (0.4 + ch.eye * 0.8) * info.vis * (info.real ? 1 : 0.8) * this.P[s].trust[target] * 1.3);
       if (Math.random() < prob) {
         const t = (0.35 + Math.random() * 0.55) * S.window * 1000;
@@ -1327,6 +1328,7 @@ class Game {
   // ---- 手番外の行動(いつでも押せる指摘ボタン・手番外イカサマ) ----
   queueAction(item) { (this.actQueue = this.actQueue || []).push(item); }
   async processQueue() {
+    if (this.io.waitHold) await this.io.waitHold(this);
     const q = this.actQueue || [];
     while (q.length) {
       const it = q.shift();
@@ -1657,7 +1659,7 @@ const Snd = {
     if (ctx.state !== 'running') ctx.resume().catch(() => { });
     this.master = ctx.createGain(); this.master.gain.value = 0.9; this.master.connect(ctx.destination);
     const comp = ctx.createDynamicsCompressor(); comp.connect(this.master);
-    this.bgmG = ctx.createGain(); this.bgmG.gain.value = this.bgmOn ? 0.32 : 0; this.bgmG.connect(comp);
+    this.bgmG = ctx.createGain(); this.bgmG.gain.value = this.bgmOn ? 0.55 : 0; this.bgmG.connect(comp);
     this.seG = ctx.createGain(); this.seG.gain.value = this.seOn ? 0.8 : 0; this.seG.connect(comp);
     // リバーブ代わりのディレイ
     this.verb = ctx.createDelay(); this.verb.delayTime.value = 0.23;
@@ -1667,7 +1669,7 @@ const Snd = {
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   },
-  setBgm(on) { this.bgmOn = on; if (this.bgmG) this.bgmG.gain.value = on ? 0.32 : 0; },
+  setBgm(on) { this.bgmOn = on; if (this.bgmG) this.bgmG.gain.value = on ? 0.55 : 0; if (on) this.bgmStart(); else this.bgmStop(); },
   setSe(on) { this.seOn = on; if (this.seG) this.seG.gain.value = on ? 0.8 : 0; },
   noise(t, dur, f, q, g, type = 'bandpass', dest) {
     const c = this.ctx; const s = c.createBufferSource(); s.buffer = this.noiseBuf;
@@ -1723,47 +1725,98 @@ const Snd = {
     }
   },
   // ---- BGM ----
-  bgmStart() {
-    if (!this.ctx || this.playing) return;
-    this.playing = true; this.nextT = this.ctx.currentTime + 0.1; this.step = 0;
-    this.timer = setInterval(() => this.sched(), 80);
+  track: 'game',
+  bgmStart(track) {
+    if (track) { if (track !== this.track) { this.track = track; this.step = 0; } }
+    if (!this.ctx || !this.bgmOn) return;
+    if (this.playing) return;
+    this.playing = true; this.nextT = this.ctx.currentTime + 0.1;
+    clearInterval(this.timer);
+    this.timer = setInterval(() => this.sched(), 60);
   },
-  bgmStop() { this.playing = false; clearInterval(this.timer); },
+  bgmStop() { this.playing = false; clearInterval(this.timer); this.timer = null; },
   setTension(on) { this.tension = on; },
   sched() {
-    const c = this.ctx; if (!c) return;
-    while (this.nextT < c.currentTime + 0.35) { this.playStep(this.step, this.nextT); const bpm = this.tension ? 104 : 86; this.nextT += 60 / bpm / 2; this.step++; }
+    const c = this.ctx; if (!c || c.state !== 'running') return;
+    if (this.nextT < c.currentTime - 0.5) this.nextT = c.currentTime + 0.05;
+    while (this.nextT < c.currentTime + 0.3) {
+      this.playStep(this.step, this.nextT);
+      const bpm = this.track === 'title' ? 78 : this.tension ? 112 : 92;
+      this.nextT += 60 / bpm / 2; this.step++;
+    }
   },
   mtof: m => 440 * Math.pow(2, (m - 69) / 12),
+  epiano(t, m, dur, g, dest) {
+    const f = this.mtof(m);
+    this.tone(t, f, dur, g, 'sine', dest, 0.008);
+    this.tone(t, f * 1.003, dur * 0.8, g * 0.5, 'sine', dest, 0.008);
+    this.tone(t, f * 2, dur * 0.35, g * 0.18, 'triangle', dest, 0.004);
+  },
+  vibe(t, m, dur, g) {
+    const f = this.mtof(m);
+    this.tone(t, f, dur, g, 'sine', this.bgmG, 0.005);
+    this.tone(t, f * 4, dur * 0.3, g * 0.12, 'sine', this.bgmG, 0.003);
+    this.tone(t, f, dur, g * 0.5, 'sine', this.verb, 0.005);
+  },
+  kick(t, g) { const c = this.ctx, o = c.createOscillator(), gn = c.createGain(); o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12); gn.gain.setValueAtTime(g, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.22); o.connect(gn); gn.connect(this.bgmG); o.start(t); o.stop(t + 0.25); },
   playStep(step, t) {
-    const T = this.tension;
-    const prog = T
-      ? [[45, [57, 60, 64, 67]], [41, [57, 60, 64, 65]], [38, [57, 60, 62, 65]], [40, [56, 59, 62, 64]]]
-      : [[38, [53, 57, 60, 64]], [43, [53, 59, 62, 64]], [36, [52, 55, 59, 62]], [45, [52, 55, 60, 64]]];
-    const bar = Math.floor(step / 8) % 4; const e = step % 8;
-    const [root, ch] = prog[bar];
-    const swing = (e % 2) ? (this.tension ? 0.02 : 0.06) : 0;
+    const T = this.track === 'title' ? 'title' : this.tension ? 'tense' : 'game';
+    const D = this.bgmG;
+    const bar = Math.floor(step / 8), e = step % 8;
+    const SONG = {
+      game: {
+        chords: [[38, [53, 57, 60, 64]], [43, [53, 59, 62, 64]], [36, [52, 55, 59, 62]], [45, [52, 55, 61, 64]]],
+        mel: [[74, null, 72, null, 69, null, 67, null], [71, null, null, 74, null, 72, 71, null], [72, null, 76, null, 74, null, 71, null], [73, null, null, null, 76, null, 73, 69]],
+        mel2: [[77, null, 76, 74, null, 72, null, null], [74, null, 71, null, 67, null, 71, null], [76, null, null, 79, 76, null, 74, null], [73, null, 69, null, null, null, null, null]],
+      },
+      tense: {
+        chords: [[45, [57, 60, 64, 67]], [41, [57, 60, 64, 65]], [38, [57, 60, 62, 65]], [40, [56, 59, 62, 64]]],
+        mel: [[76, null, 76, null, 72, null, 74, null], [72, null, 69, null, null, null, null, null], [74, null, 74, null, 77, null, 76, null], [71, null, null, 68, null, null, 64, null]],
+        mel2: [[81, null, 79, null, 76, null, 74, null], [76, null, 72, null, null, null, 69, null], [77, null, 76, null, 74, null, 72, null], [71, null, 68, null, 71, null, 76, null]],
+      },
+      title: {
+        chords: [[41, [57, 60, 64, 67]], [40, [55, 59, 62, 67]], [38, [57, 60, 64, 65]], [36, [55, 59, 64, 67]]],
+        mel: [[null, null, 72, null, 76, null, 74, null], [72, null, null, null, 71, null, null, null], [69, null, 72, null, 77, null, 76, null], [74, null, null, null, 71, null, 72, null]],
+        mel2: [[79, null, null, 77, 76, null, 74, null], [74, null, 72, null, 71, null, null, null], [72, null, 74, null, 77, null, 81, null], [79, null, null, null, null, null, null, null]],
+      },
+    }[T];
+    const [root, ch] = SONG.chords[bar % 4];
+    const melody = (Math.floor(bar / 4) % 2 ? SONG.mel2 : SONG.mel)[bar % 4];
+    const swing = (e % 2) ? (T === 'tense' ? 0.015 : 0.05) : 0;
     const tt = t + swing;
-    const dest = this.bgmG;
-    // エレピ
-    if (e === 0 || e === 3 || (T && e === 6)) {
-      for (const m of ch) { const f = this.mtof(m); this.tone(tt, f, 1.6, 0.05, 'sine', dest, 0.01); this.tone(tt, f * 2, 0.5, 0.012, 'sine', dest, 0.005); }
-      for (const m of ch.slice(1, 3)) this.tone(tt, this.mtof(m), 1.2, 0.02, 'sine', this.verb, 0.01);
+    if (T === 'title') {
+      if (e === 0) { for (const m of ch) this.epiano(tt, m, 3.2, 0.05, D); this.tone(tt, this.mtof(root), 2.6, 0.22, 'triangle', D, 0.05); }
+      if (e === 4) for (const m of ch.slice(1)) this.epiano(tt, m + 12, 1.2, 0.02, this.verb);
+      if (e % 2 === 1) this.noise(tt, 0.03, 9000, 0.7, 0.025, 'highpass', D);
+    } else {
+      // コード(エレピ)
+      if (e === 0 || e === 3 || (T === 'tense' && e === 6)) for (const m of ch) this.epiano(tt, m, T === 'tense' ? 0.5 : 1.3, 0.055, D);
+      // ベース
+      const walk = T === 'tense' ? [0, 0, 7, 0, 12, 0, 7, 10] : [0, null, 7, null, 12, null, 10, 7];
+      const bn = walk[e];
+      if (bn !== null) { this.tone(tt, this.mtof(root + bn), T === 'tense' ? 0.2 : 0.38, 0.3, 'triangle', D, 0.01); this.tone(tt, this.mtof(root + bn) * 2, 0.12, 0.05, 'sine', D, 0.005); }
+      // ドラム
+      if (e === 0 || e === 4 || (T === 'tense' && e % 2 === 0)) this.kick(tt, T === 'tense' ? 0.45 : 0.38);
+      if (e === 2 || e === 6) this.noise(tt, 0.09, 1900, 0.8, 0.11, 'bandpass', D);
+      this.noise(tt, 0.035, 8500, 0.8, e % 2 ? 0.05 : 0.08, 'highpass', D);
+      if (T === 'tense') this.noise(tt + 60 / 112 / 4, 0.02, 9000, 0.8, 0.03, 'highpass', D);
     }
-    // ベース
-    const walk = T ? [0, 0, 7, 0, 12, 0, 7, 10] : [0, null, 7, null, 12, null, 10, 7];
-    const bn = walk[e];
-    if (bn !== null) { const f = this.mtof(root + bn); this.tone(tt, f, T ? 0.22 : 0.4, 0.22, 'triangle', dest, 0.01); }
-    // ハイハット
-    if (e % 2 === 1 || T) this.noise(tt, 0.03, 8000, 0.8, e % 4 === 3 ? 0.09 : 0.05, 'highpass', dest);
-    if (e === 4) this.noise(tt, 0.08, 1800, 0.9, 0.06, 'bandpass', dest);
-    if (T && (e === 0 || e === 4)) this.tone(tt, 60, 0.15, 0.35, 'sine', dest);
-    // メロディ(たまに)
-    if (Math.random() < (T ? 0.25 : 0.18) && e % 2 === 0) {
-      const scale = T ? [69, 72, 74, 76, 79, 81] : [74, 77, 79, 81, 84, 86];
-      const m = scale[Math.floor(Math.random() * scale.length)];
-      this.tone(tt, this.mtof(m), 0.7, 0.035, 'sine', dest, 0.01); this.tone(tt, this.mtof(m), 0.7, 0.03, 'sine', this.verb, 0.01);
-    }
+    // メロディ
+    const mm = melody[e];
+    if (mm) this.vibe(tt, mm, T === 'title' ? 1.4 : 0.8, T === 'title' ? 0.07 : 0.06);
+  },
+  // 画面を閉じたら止める
+  pauseAll() {
+    this.wasPlaying = this.playing;
+    this.bgmStop();
+    try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend().catch(() => { });
+  },
+  resumeAll() {
+    if (!this.ctx) return;
+    this.ctx.resume().catch(() => { });
+    if (this.wasPlaying && this.bgmOn) this.bgmStart();
+    this.wasPlaying = false;
   },
   // ---- 音声 ----
   voice(text, pitch = 1, rate = 1.1) {
@@ -1782,11 +1835,14 @@ const Snd = {
 
 // 画面に触れるたび、止まっている音を再開する(iPhone対策)
 ['pointerdown', 'touchend', 'keydown'].forEach(ev => window.addEventListener(ev, () => {
+  if (document.hidden) return;
   try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { }
   if (Snd.ctx && Snd.ctx.state !== 'running') Snd.ctx.resume().catch(() => { });
-  if (window.speechSynthesis && speechSynthesis.paused) speechSynthesis.resume();
 }, { passive: true }));
-document.addEventListener('visibilitychange', () => { if (!document.hidden && Snd.ctx && Snd.ctx.state !== 'running') Snd.ctx.resume().catch(() => { }); });
+// 画面を閉じた・別アプリに切り替えたら音を止め、戻ったら再開
+document.addEventListener('visibilitychange', () => { if (document.hidden) Snd.pauseAll(); else Snd.resumeAll(); });
+window.addEventListener('pagehide', () => Snd.pauseAll());
+window.addEventListener('blur', () => { if (document.hidden) Snd.pauseAll(); });
 
 // ===================== キャラボイス・セリフ =====================
 // ファイル名: {VOICE_ID}_{種類}.mp3   例: tsumiko_ron_mangan.mp3
@@ -1815,24 +1871,24 @@ const LINES = {
 const VOICE_PITCH = { mr_bad: 0.4, tsumiko: 1.5, hattari: 0.6, inspector: 1.0, tome: 0.8, newcomer: 1.3, kurofuku: 0.5, player_male: 1.0, player_female: 1.5, player_cat: 1.8, player_cool: 0.8 };
 
 const VoiceBank = {
-  buf: {}, loaded: false,
-  load() {
-    if (this.loaded || !Snd.ctx || typeof VOICES === 'undefined') return;
-    this.loaded = true;
-    for (const [key, uri] of Object.entries(VOICES)) {
+  buf: {}, pend: {},
+  decodeOne(key) {
+    if (this.buf[key]) return Promise.resolve(this.buf[key]);
+    if (this.pend[key]) return this.pend[key];
+    if (!Snd.ctx || typeof VOICES === 'undefined' || !VOICES[key]) return Promise.resolve(null);
+    this.pend[key] = new Promise(res => {
       try {
-        const b64 = uri.slice(uri.indexOf(',') + 1);
+        const uri = VOICES[key], b64 = uri.slice(uri.indexOf(',') + 1);
         const bin = atob(b64); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-        Snd.ctx.decodeAudioData(arr.buffer, b => { this.buf[key] = b; }, () => { });
-      } catch (e) { }
-    }
+        Snd.ctx.decodeAudioData(arr.buffer, b => { this.buf[key] = b; res(b); }, () => res(null));
+      } catch (e) { res(null); }
+    });
+    return this.pend[key];
   },
-  // 鳴らせたら true
+  load() { if (typeof VOICES === 'undefined' || !Snd.ctx) return; for (const key of Object.keys(VOICES)) this.decodeOne(key); },
   play(vid, type) {
-    const key = vid + '_' + type;
-    const b = this.buf[key];
-    if (!b || !Snd.ctx) return false;
-    if (!Snd.voiceOn) return 0;
+    const b = this.buf[vid + '_' + type];
+    if (!b || !Snd.ctx) return 0;
     const s = Snd.ctx.createBufferSource(); s.buffer = b;
     const g = Snd.ctx.createGain(); g.gain.value = 1.0;
     s.connect(g); g.connect(Snd.master); s.start();
@@ -1840,16 +1896,18 @@ const VoiceBank = {
   },
   has(vid, type) { return typeof VOICES !== 'undefined' && !!VOICES[vid + '_' + type]; },
 };
-// キャラにしゃべらせる(ファイルがなければ読み上げで代用)
+// キャラにしゃべらせる。音声ファイルがあるセリフは、読み込みを待ってから再生(機械音声にはしない)
 // 戻り値: { text, done(しゃべり終わりのPromise) }
 function sayLine(p, type) {
   const vid = VOICE_ID[p.icon] || 'player_male';
   const text = (LINES[vid] || LINES.player_male)[type] || '';
-  const d = VoiceBank.play(vid, type);
-  let done;
-  if (d === false) done = Snd.voice(text.replace(/[♪…]/g, ''), VOICE_PITCH[vid] || 1, 1.12);
-  else done = sleep(d * 1000 + 100);
-  return { text, done };
+  if (VoiceBank.has(vid, type)) {
+    if (!Snd.voiceOn || !Snd.ctx) return { text, done: Promise.resolve() };
+    const done = VoiceBank.decodeOne(vid + '_' + type).then(b => { if (!b) return; const d = VoiceBank.play(vid, type); return sleep(d * 1000 + 100); });
+    return { text, done };
+  }
+  if (!text) return { text, done: Promise.resolve() };
+  return { text, done: Snd.voice(text.replace(/[♪…]/g, ''), VOICE_PITCH[vid] || 1, 1.12) };
 }
 function winVoiceType(r) {
   const lv = r.res.yakuman || r.res.han >= 13 ? 'yakuman' : r.res.base >= 2000 ? 'mangan' : 'low';
@@ -2120,7 +2178,7 @@ function toast(html, ms = 2200) {
   const d = document.createElement('div'); d.className = 'tt'; d.innerHTML = html;
   $('#toast').appendChild(d); setTimeout(() => d.remove(), ms);
 }
-const speed = () => S.speed === 'fast' ? 0.55 : 1;
+const speed = () => S.speed === 'fast' ? 0.5 : 1;
 // ---------- カットイン ----------
 async function cutin(G, seat, kind, word, line) {
   if (!S.cutin) { banner(word, seat, kind === 'call' ? 70 : 90); await sleep((kind === 'call' ? 700 : 1200) * (kind === 'call' ? speed() : 1)); return; }
@@ -2193,7 +2251,7 @@ const IO = {
         Snd.se('clack');
         render();
         if (ev.riichi) { const p = G.P[ev.seat]; Snd.se('riichi'); Snd.setTension(true); const v = sayLine(p, 'riichi'); await cutin(G, ev.seat, 'riichi', 'リーチ', v.text); }
-        else await sleep(380 * speed());
+        else await sleep(520 * speed());
         break;
       case 'riichiStick': render(); break;
       case 'call': {
@@ -2223,7 +2281,8 @@ const IO = {
       }
     }
   },
-  async think(G, seat) { await sleep((260 + Math.random() * 320) * speed()); },
+  async think(G, seat) { await sleep((650 + Math.random() * 550) * speed()); },
+  async waitHold(G) { const t0 = Date.now(); while ((U.holdOff || (typeof Host !== 'undefined' && Host.holds && Host.holds.size)) && Date.now() - t0 < 20000) await new Promise(r => setTimeout(r, 100)); },
   async handStart(G, stackInfo) {
     U.turn = null; U.sel = null; U.riichiMode = false; U.revealAll = false; U.lastDisc = null; U.turnSeat = G.dealer;
     Snd.setTension(false);
@@ -2452,10 +2511,15 @@ function cheatMenu() {
     if (v === 'river') return riverUI();
   });
 }
-function pickHandTile(msg, cb) {
+function setHold(on) {
+  U.holdOff = on;
+  if (U.online && U.online.role === 'guest') Net.emit({ t: 'hold', on: !!on });
+  if (on) { clearTimeout(U.holdTimer); U.holdTimer = setTimeout(() => setHold(false), 20000); }
+}
+function pickHandTile(msg, cb, onCancel) {
   U.pickMode = { msg, onHand: id => { U.pickMode.handSel = id; renderHand(); setTimeout(() => { const pm = U.pickMode; U.pickMode = null; cb(id); }, 250); } };
   renderHand();
-  setActions([{ label: 'やめる', cls: 'gray small', fn: () => { U.pickMode = null; setActions([]); renderHand(); turnButtons(); } }]);
+  setActions([{ label: 'やめる', cls: 'gray small', fn: () => { U.pickMode = null; setActions([]); renderHand(); turnButtons(); if (onCancel) onCancel(); } }]);
 }
 function elevatorUI() {
   const G = U.G;
@@ -2557,6 +2621,7 @@ function onCheatButton() {
     return cheatMenu();
   }
   if (!canOffCheatUI(G)) { toast(G.turnSeat === HUMAN ? '自分の番を待ってください' : '手番外のイカサマは1巡に1回までです', 1600); return; }
+  setHold(true);
   const ld = G.lastDiscard;
   const ldOk = ld && ld.seat !== HUMAN && G.P[ld.seat] && G.P[ld.seat].river.length && !G.P[ld.seat].river[G.P[ld.seat].river.length - 1].called;
   const ldTile = ldOk ? G.P[ld.seat].river[G.P[ld.seat].river.length - 1].id : null;
@@ -2565,16 +2630,23 @@ function onCheatButton() {
     ${opt('river', ldOk ? '　' + T(ldTile, 'xs') : '', ldOk)}${opt('shift', '', G.live.length >= 2)}${opt('bluff', '', true)}
     <div style="font-size:13px;color:#9fb3aa;margin-top:8px">手番外のイカサマは1巡に1回まで。次の区切り（誰かが牌を切った直後など）で実行されます。</div>
     <div style="text-align:center;margin-top:12px"><button class="btn gray small" data-v="cancel">やめる</button></div></div>`);
+  // 待っている間に捨て牌が変わったら表示を更新
+  const iv = setInterval(() => {
+    if (!ov.isConnected) return clearInterval(iv);
+    const l2 = G.lastDiscard; const okNow = l2 && l2.seat !== HUMAN && G.P[l2.seat] && G.P[l2.seat].river.length && !G.P[l2.seat].river[G.P[l2.seat].river.length - 1].called;
+    const tNow = okNow ? G.P[l2.seat].river[G.P[l2.seat].river.length - 1].id : null;
+    if (tNow !== ldTile) { ov.remove(); clearInterval(iv); setHold(false); onCheatButton(); }
+  }, 250);
   waitClick(ov, 'button').then(v => {
-    ov.remove();
-    if (v === 'cancel') return;
-    if (v === 'shift') return sendOffAction({ type: 'off', act: { tech: 'shift' } });
+    ov.remove(); clearInterval(iv);
+    if (v === 'cancel') { setHold(false); return; }
+    if (v === 'shift') { setHold(false); return sendOffAction({ type: 'off', act: { tech: 'shift' } }); }
     if (v === 'bluff') {
       const o2 = overlay(`<div class="panel" style="text-align:center"><h2>ブラフ</h2><div>どの技のフリをする？</div><div style="display:flex;gap:12px;justify-content:center;margin:16px 0">${['river', 'shift'].map(k => `<button class="btn purple small" data-v="${k}">${TECH[k].name}のフリ</button>`).join('')}</div><button class="btn gray small" data-v="cancel">やめる</button></div>`);
-      return waitClick(o2, 'button').then(f => { o2.remove(); if (f !== 'cancel') sendOffAction({ type: 'off', act: { tech: 'bluff', fake: f } }); });
+      return waitClick(o2, 'button').then(f => { o2.remove(); setHold(false); if (f !== 'cancel') sendOffAction({ type: 'off', act: { tech: 'bluff', fake: f } }); });
     }
     if (v === 'river') {
-      pickHandTile(`${tileName(ldTile >> 2)} とすり替える手牌をタップ`, id => { setActions([]); renderHand(); sendOffAction({ type: 'off', act: { tech: 'river', handId: id } }); });
+      pickHandTile(`${tileName(ldTile >> 2)} とすり替える手牌をタップ`, id => { setActions([]); renderHand(); setHold(false); sendOffAction({ type: 'off', act: { tech: 'river', handId: id } }); }, () => setHold(false));
     }
   });
 }
@@ -2711,6 +2783,7 @@ function showTitle() {
   $('#game').style.display = 'none';
   const t = $('#title'); t.style.display = 'flex';
   Snd.setTension(false);
+  Snd.bgmStop(); Snd.track = 'title'; Snd.step = 0; if (S.bgm) Snd.bgmStart();
 }
 
 function startGame() {
@@ -2742,6 +2815,12 @@ function initTitle() {
   $('#tOnline').onclick = () => { Snd.init(); openOnline(); };
 }
 
+document.addEventListener('click', e => {
+  const b = e.target.closest('button, .seg button, .charsel .c, .kindgrid .k');
+  if (!b) return;
+  Snd.init();
+  if (!U.G || $('#title').style.display !== 'none') { Snd.se('select'); if (S.bgm && !Snd.playing) Snd.bgmStart('title'); }
+}, true);
 function init() {
   const st = document.createElement('style'); st.textContent = buildTileCSS(); document.head.appendChild(st);
   $('#plane').innerHTML = `<div class="tabletop" ${typeof ASSETS !== 'undefined' ? `style="background-image:url(${ASSETS.felt})"` : ''}></div>` + [0, 1, 2, 3].map(s => `<div class="layer" id="layer${s}" style="transform:rotate(${SEAT_ROT[s]}deg)"></div>`).join('') + `<div id="center"></div>`;
@@ -2891,7 +2970,7 @@ const Net = {
 
 // ---------- ホスト ----------
 const Host = {
-  seats: [], timer: null, game: null, asks: {}, askSeq: 0, accWins: {}, seatPeer: [], gone: new Set(), playing: false, seq: 0,
+  seats: [], timer: null, game: null, holds: new Set(), asks: {}, askSeq: 0, accWins: {}, seatPeer: [], gone: new Set(), playing: false, seq: 0,
   stop() { clearInterval(this.timer); this.timer = null; for (const id in this.asks) this.finishAsk(+id, this.asks[id].fallback()); this.playing = false; },
   open() {
     this.seats = [{ peer: null, name: myOnlineName(), icon: S.myIcon }];
@@ -2916,6 +2995,11 @@ const Host = {
       }
       case 'bye': { const i = this.seats.findIndex(x => x.peer === peer); if (i > 0 && !this.playing) { this.seats.splice(i, 1); this.bLobby(); } break; }
       case 'ans': { const a = this.asks[d.id]; if (a && a.peer === peer) this.finishAsk(d.id, d.v); break; }
+      case 'hold': {
+        const seat = this.seatPeer.indexOf(peer);
+        if (seat > 0) { if (d.on) { this.holds.add(seat); clearTimeout(this.holdT); this.holdT = setTimeout(() => this.holds.clear(), 20000); } else this.holds.delete(seat); }
+        break;
+      }
       case 'freeAcc': {
         const seat = this.seatPeer.indexOf(peer);
         if (seat > 0 && this.game && Number.isInteger(d.target) && d.target >= 0 && d.target < this.game.N && d.target !== seat) this.game.queueAction({ type: 'free', accuser: seat, target: d.target });
@@ -2987,7 +3071,7 @@ const Host = {
       if (s) { players.push({ name: s.name, isHuman: true, icon: s.icon, char: charOf(s.icon) }); this.seatPeer.push(s.peer); }
       else { const c = pool.shift() || CHARS[i]; players.push({ name: c.name, isHuman: false, icon: c.id, char: c }); this.seatPeer.push(null); }
     }
-    this.playing = true; this.gone = new Set();
+    this.playing = true; this.gone = new Set(); this.holds = new Set();
     Net.emit({ t: 'start', rules: rulesNow(), pl: players.map((p, i) => ({ n: p.name, i: p.icon, h: p.isHuman ? 1 : 0, peer: this.seatPeer[i] || '' })) });
     Lobby.close();
     U.online = { role: 'host' };
@@ -3033,6 +3117,7 @@ function makeHostIO() {
   const bc = (fn, a) => Host.bcast(fn, a);
   io.update = async (G, ev) => { bc('update', [ev]); await L.update(G, ev); };
   io.think = (G, s) => L.think(G, s);
+  io.waitHold = G => L.waitHold(G);
   io.handStart = async (G, si) => { bc('handStart', [si ? { result: si.result } : null]); await L.handStart(G, si); };
   io.humanTurn = (G, seat, o, ctx) => seat === 0 ? L.humanTurn(G, seat, o, ctx) : Host.ask(seat, 'humanTurn', [seat, o, ctx], () => aiTurn(G, seat, o), 120000).then(v => checkTurnAns(G, seat, o, v));
   io.humanRon = (G, seat, res, id) => seat === 0 ? L.humanRon(G, seat, res, id) : Host.ask(seat, 'humanRon', [seat, null, id], () => true, 30000).then(v => v !== false);
@@ -3185,7 +3270,7 @@ const Guest = {
 
 // ---------- 対局の起動(ローカル・ホスト・ゲスト共通) ----------
 function launchGame(players, io, onG, mirror) {
-  Snd.init(); Snd.setBgm(S.bgm); Snd.setSe(S.se); Snd.voiceOn = S.voice; Snd.bgmStart(); VoiceBank.load();
+  Snd.init(); Snd.setSe(S.se); Snd.voiceOn = S.voice; Snd.bgmStop(); Snd.track = 'game'; Snd.step = 0; Snd.setBgm(S.bgm); VoiceBank.load();
   $('#title').style.display = 'none'; $('#game').style.display = 'block';
   document.querySelectorAll('.overlay').forEach(o => o.remove());
   const myToken = {};
