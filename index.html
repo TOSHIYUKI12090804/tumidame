@@ -239,6 +239,10 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 .seatlist .st.me{border-color:#ffd166}
 .seatlist .st .av{width:60px;height:60px;border-radius:50%;margin:0 auto 6px;background:center/cover}
 .inp{font-family:inherit;font-size:22px;padding:10px 14px;border-radius:12px;border:2px solid #2b3a33;background:#0b1210;color:#fff;width:200px;text-transform:uppercase;letter-spacing:4px;text-align:center}
+.badge.dead{background:#c1121f;color:#fff}
+
+#cheatbar{position:absolute;right:16px;top:396px;display:flex;flex-direction:column;gap:10px;z-index:12;width:140px}
+#cheatbar .cbtn{font-size:18px;padding:10px 0;width:100%}
 </style>
 </head>
 <body>
@@ -253,6 +257,7 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
     <div id="mymelds"></div>
     <div id="actions"></div>
     <div id="quick"></div>
+    <div id="cheatbar"></div>
     <button class="btn gray small" id="menuBtn">☰ メニュー</button>
   </div>
   <div id="fx"></div>
@@ -682,7 +687,7 @@ const AI = {
     let list = AI.analyze(game, p);
     const minS = Math.min(...list.map(x => x.s));
     const someoneThreat = game.P.some((q, i) => i !== seat && (q.riichi || q.melds.length >= 3));
-    const defend = someoneThreat && minS >= (ch.aggro > 0.6 ? 2 : 1);
+    const defend = p.dead || (someoneThreat && minS >= (ch.aggro > 0.6 ? 2 : 1));
     let bestK = null, bestV = -Infinity;
     for (const x of list) {
       let v;
@@ -768,6 +773,7 @@ const TECH = {
   elevator: { name: 'エレベーター', cost: 3, vis: 0.3, desc: '次にツモる3枚の中から1枚を手牌と入れ替える' },
   bukko: { name: 'ぶっこ抜き', cost: 5, vis: 0.55, desc: '山から好きな牌を1枚抜いて手牌と入れ替える' },
   river: { name: '河拾い', cost: 3, vis: 0.42, desc: '河（捨て牌）から1枚拾って手牌と入れ替える' },
+  shift: { name: '山ずらし', cost: 2, vis: 0.35, desc: '次にツモられる牌を1枚後ろにずらす（相手の番に使う）', off: true },
   bluff: { name: 'ブラフ', cost: 2, vis: 0.45, desc: 'イカサマしてる風の動きだけする。指摘されたら相手がアウト' },
 };
 
@@ -836,7 +842,7 @@ class Game {
     const S = this.S;
     this.handNo++;
     for (const p of this.P) {
-      Object.assign(p, { hand: [], melds: [], river: [], discardKinds: new Set(), riichi: false, dbl: false, ippatsu: false, furitenTemp: false, riichiFuriten: false, plan: null, _planNext: null, stacked: 0, cheatedTurn: false, kita: 0, kitaIds: [] });
+      Object.assign(p, { hand: [], melds: [], river: [], discardKinds: new Set(), riichi: false, dbl: false, ippatsu: false, furitenTemp: false, riichiFuriten: false, plan: null, _planNext: null, stacked: 0, cheatedTurn: false, kita: 0, kitaIds: [], dead: false });
     }
     this.anyCall = false; this.kanCount = 0; this.rinIdx = 0; this.lastDiscard = null; this.events = [];
     let pool = this.setupWall();
@@ -863,8 +869,11 @@ class Game {
     if (stackInfo) { const r = await this.stackAccuse(stackInfo); if (r) return r; }
 
     let turn = this.dealer, mode = 'draw';
+    this.discardNo = 0; this.actQueue = []; this.lastDiscard = null;
     while (true) {
       const p = this.P[turn];
+      { const r = await this.processQueue(); if (r) return r; }
+      this.turnSeat = turn;
       let drawn = null;
       if (mode === 'draw') {
         if (!this.live.length) return this.exhaustive();
@@ -887,6 +896,13 @@ class Game {
         if (act.type === 'cheat') { const r = await this.doCheat(turn, act); if (r) return r; continue; }
         break;
       }
+      { const r = await this.processQueue(); if (r) return r; }
+      // アガリ放棄の人はアガれない(手番中に指摘が通った場合の保険)
+      if (p.dead) {
+        if (act.type === 'tsumo' || act.type === 'ankan' || act.type === 'kakan') act = { type: 'discard', id: (p.drawn != null && p.hand.includes(p.drawn)) ? p.drawn : AI.chooseDiscard(this, p) };
+        if (act.type === 'discard') act.riichi = false;
+      }
+      if (act.type === 'discard' && !p.hand.includes(act.id)) act = { type: 'discard', id: AI.chooseDiscard(this, p) };
       if (act.type === 'tsumo') {
         return this.settleWin(turn, null, p.drawn, { tsumo: true, rinshan: mode === 'rinshan' || mode === 'kitadraw', haitei: mode === 'draw' && !this.live.length, firstTurn });
       }
@@ -903,7 +919,7 @@ class Game {
         continue;
       }
       // 打牌
-      const id = act.id;
+      let id = act.id;
       const declaring = !!act.riichi;
       p.hand.splice(p.hand.indexOf(id), 1);
       this.sortHand(p);
@@ -917,7 +933,13 @@ class Game {
       }
       if (p._planNext) { p.plan = p._planNext; p._planNext = null; }
       this.lastDiscard = { seat: turn, id };
+      this.discardNo++;
       await this.io.update(this, { type: 'discard', seat: turn, id, riichi: declaring });
+      // チェックポイント2: 捨て牌の直後(手番外のイカサマ・指摘)
+      this.turnSeat = -1;
+      if (this.S.mode === 'cheat') this.cpuOffTurn(turn);
+      { const r = await this.processQueue(); if (r) return r; }
+      id = p.river[p.river.length - 1].id; this.lastDiscard.id = id;
       const ron = await this.checkRon(turn, id, { houtei: !this.live.length });
       if (ron) return ron;
       if (declaring) {
@@ -977,6 +999,7 @@ class Game {
     if (this.sanma && !ctx.afterCall && this.live.length > 0) {
       o.kita = p.riichi ? (p.drawn !== null && p.drawn !== undefined && (p.drawn >> 2) === 30) : p.hand.some(id => (id >> 2) === 30);
     }
+    if (p.dead) { o.tsumo = null; return o; } // アガリ放棄: 好きな牌を切るだけ
     if (p.riichi) { o.mustTsumogiri = true; return o; }
     if (menzen && p.score >= 1000 && this.live.length >= 4 && !ctx.afterCall) {
       const c = toCounts(p.hand);
@@ -998,7 +1021,7 @@ class Game {
     await this.io.think(this, seat);
     if (o.tsumo) return { type: 'tsumo' };
     // CPUのイカサマ
-    if (this.S.mode === 'cheat' && !p.riichi && !ctx.afterCall && p.cheatPts > 0 && !p.cheatedTurn) {
+    if (this.S.mode === 'cheat' && !p.riichi && !p.dead && !ctx.afterCall && p.cheatPts > 0 && !p.cheatedTurn) {
       const ch = this.cpuCheat(seat);
       if (ch) return ch;
     }
@@ -1063,13 +1086,14 @@ class Game {
     for (let i = 1; i < this.N; i++) {
       const s = (from + i) % this.N;
       const q = this.P[s];
+      if (q.dead) continue;
       const res = this.canRonWith(s, id, Object.assign({ houtei: !!extra.houtei, chankan: !!extra.chankan }, {}));
       if (!res) continue;
       if (this.isFuriten(s)) continue;
       let take;
       if (q.isHuman) take = await this.io.humanRon(this, s, res, id);
       else take = true;
-      if (take) return this.settleWin(s, from, id, { tsumo: false, houtei: !!extra.houtei, chankan: !!extra.chankan });
+      if (take && !q.dead) return this.settleWin(s, from, id, { tsumo: false, houtei: !!extra.houtei, chankan: !!extra.chankan });
       q.furitenTemp = true;
       if (q.riichi) q.riichiFuriten = true;
     }
@@ -1080,7 +1104,7 @@ class Game {
     const q = this.P[seat];
     const k = id >> 2;
     const o = { pon: false, kan: false, chi: [] };
-    if (!this.S.naki || q.riichi) return o;
+    if (!this.S.naki || q.riichi || q.dead) return o;
     const c = toCounts(q.hand);
     if (c[k] >= 2) o.pon = true;
     if (c[k] >= 3 && this.live.length > 0 && this.kanCount < 4) o.kan = true;
@@ -1188,7 +1212,7 @@ class Game {
 
   exhaustive() {
     const tenpai = [];
-    this.P.forEach((p, i) => { if (shanten(toCounts(p.hand), p.melds.length) === 0) tenpai.push(i); });
+    this.P.forEach((p, i) => { if (!p.dead && shanten(toCounts(p.hand), p.melds.length) === 0) tenpai.push(i); });
     const deltas = new Array(this.N).fill(0);
     const N = this.N, pool = this.sanma ? 2000 : 3000;
     if (tenpai.length && tenpai.length < N) {
@@ -1259,6 +1283,7 @@ class Game {
     for (const r of sus) {
       const real = r.got.length > 0 || r.fail;
       const vis = r.bluff ? 0.4 : Math.min(0.9, 0.15 + 0.1 * r.got.length + (r.fail ? 0.35 : 0));
+      await this.io.cheatAnim(this, r.seat, { tech: r.bluff ? 'bluff' : 'stack', shown: 'stack', real });
       const res = await this.accuseWindow(r.seat, { tech: 'stack', real, vis });
       if (res) await this.io.update(this, { type: 'scores' });
     }
@@ -1273,7 +1298,11 @@ class Game {
     for (let s = 0; s < this.N; s++) {
       if (s === target || this.P[s].isHuman) continue;
       const ch = this.P[s].char;
-      const prob = Math.min(0.95, ch.accuse * (0.4 + ch.eye * 0.8) * info.vis * (info.real ? 1 : 0.8) * this.P[s].trust[target] * 1.3);
+      const me = this.P[s];
+      if (me.dead) continue;
+      const myS = me.hand.length ? shanten(toCounts(me.hand), me.melds.length) : 3;
+      const risk = me.riichi ? 0.35 : myS <= 0 ? 0.5 : myS === 1 ? 0.75 : 1; // 手が良いほど慎重
+      const prob = risk * Math.min(0.95, ch.accuse * (0.4 + ch.eye * 0.8) * info.vis * (info.real ? 1 : 0.8) * this.P[s].trust[target] * 1.3);
       if (Math.random() < prob) {
         const t = (0.35 + Math.random() * 0.55) * S.window * 1000;
         if (t < cpuTime) { cpuTime = t; cpuAcc = s; }
@@ -1287,12 +1316,86 @@ class Game {
     }
     const pen = S.penalty;
     let outcome;
-    if (info.real) { this.pay(target, who, pen); outcome = 'caught'; if (info.tech !== 'stack') this.P[target].blockTsumo = true; this.addPt(who); this.P[who].trust[target] = Math.min(2, this.P[who].trust[target] * 1.3); }
-    else { this.pay(who, target, pen); outcome = 'false'; this.addPt(target); this.P[who].trust[target] = Math.max(0.3, this.P[who].trust[target] * 0.65); }
+    if (info.real) { this.pay(target, who, pen); outcome = 'caught'; this.P[target].dead = true; this.addPt(who); this.P[who].trust[target] = Math.min(2, this.P[who].trust[target] * 1.3); }
+    else { this.pay(who, target, pen); outcome = 'false'; this.P[who].dead = true; this.P[who].trust[target] = Math.max(0.3, this.P[who].trust[target] * 0.65); }
     // 他のCPUも学習
     for (let s = 0; s < this.N; s++) if (s !== who && s !== target) this.P[s].trust[target] = Math.max(0.3, Math.min(2, this.P[s].trust[target] * (info.real ? 1.15 : 0.85)));
     await this.io.accuseResult(this, { target, accuser: who, outcome, pen, info });
     return outcome;
+  }
+
+  // ---- 手番外の行動(いつでも押せる指摘ボタン・手番外イカサマ) ----
+  queueAction(item) { (this.actQueue = this.actQueue || []).push(item); }
+  async processQueue() {
+    const q = this.actQueue || [];
+    while (q.length) {
+      const it = q.shift();
+      if (it.type === 'free') await this.freeAccuse(it.accuser, it.target);
+      else if (it.type === 'off') await this.offCheat(it.seat, it.act);
+    }
+    if (this.P.some(p => p.score < 0)) return { type: 'abort' };
+    return null;
+  }
+  canOffCheat(seat) {
+    const p = this.P[seat];
+    if (this.S.mode !== 'cheat' || !p || p.dead || p.riichi || seat === this.turnSeat) return false;
+    return p.lastOff === undefined || p.lastOff === null || (this.discardNo || 0) - p.lastOff >= this.N;
+  }
+  async freeAccuse(accuser, target) {
+    if (target === accuser || !this.P[target] || !this.P[accuser]) return;
+    const pen = this.S.penalty;
+    this.pay(accuser, target, pen);
+    this.P[accuser].dead = true;
+    await this.io.accuseResult(this, { target, accuser, outcome: 'false', pen, info: { tech: 'none', real: false } });
+    await this.io.update(this, { type: 'scores' });
+  }
+  async offCheat(seat, act) {
+    const p = this.P[seat];
+    if (!act || !TECH[act.tech] || !['river', 'shift', 'bluff'].includes(act.tech)) return;
+    const t = TECH[act.tech];
+    if (!this.canOffCheat(seat) || p.cheatPts < t.cost) return;
+    let shown = act.tech;
+    if (act.tech === 'river') {
+      const ld = this.lastDiscard;
+      if (!ld || ld.seat === seat || !p.hand.includes(act.handId)) return;
+      const rv = this.P[ld.seat].river[this.P[ld.seat].river.length - 1];
+      if (!rv || rv.called) return;
+      const hi = p.hand.indexOf(act.handId);
+      const w = rv.id; rv.id = act.handId; rv.swapped = true; p.hand[hi] = w;
+      this.sortHand(p);
+    } else if (act.tech === 'shift') {
+      if (this.live.length < 2) return;
+      [this.live[0], this.live[1]] = [this.live[1], this.live[0]];
+    } else {
+      shown = ['river', 'shift', 'elevator', 'bukko'].includes(act.fake) ? act.fake : 'shift';
+    }
+    p.cheatPts -= t.cost; p.lastOff = this.discardNo || 0;
+    const real = act.tech !== 'bluff';
+    await this.io.cheatAnim(this, seat, { tech: act.tech, shown, real, act });
+    await this.accuseWindow(seat, { tech: shown, real, vis: TECH[shown].vis });
+    await this.io.update(this, { type: 'scores' });
+  }
+  cpuOffTurn(discarder) {
+    const ld = this.lastDiscard; if (!ld) return;
+    for (let s = 0; s < this.N; s++) {
+      const p = this.P[s];
+      if (s === discarder || p.isHuman || !this.canOffCheat(s)) continue;
+      const ch = p.char;
+      if (ch.cheat > 0.6 && p.cheatPts < STACK_COST + 3) continue;
+      // 捨て牌が欲しい牌ならすり替える
+      if (p.cheatPts >= TECH.river.cost && Math.random() < ch.cheat * 0.35) {
+        const c = toCounts(p.hand), nm = p.melds.length, s0 = shanten(c, nm);
+        p.hand.push(ld.id); const worst = AI.chooseDiscard(this, p); p.hand.pop();
+        if (worst !== ld.id && p.hand.includes(worst)) {
+          c[worst >> 2]--; c[ld.id >> 2]++;
+          if (shanten(c, nm) < s0) { this.queueAction({ type: 'off', seat: s, act: { tech: 'river', handId: worst } }); continue; }
+        }
+      }
+      // リーチ者のツモをずらす
+      const next = (discarder + 1) % this.N;
+      if (next !== s && this.P[next].riichi && p.cheatPts >= TECH.shift.cost && Math.random() < ch.cheat * 0.15) { this.queueAction({ type: 'off', seat: s, act: { tech: 'shift' } }); continue; }
+      if (p.cheatPts >= TECH.bluff.cost && Math.random() < ch.bluff * 0.012) { this.queueAction({ type: 'off', seat: s, act: { tech: 'bluff', fake: Math.random() < 0.5 ? 'river' : 'shift' } }); }
+    }
   }
 
   cpuCheat(seat) {
@@ -1871,7 +1974,15 @@ function render() {
   renderHand(); renderQuick();
   $('#mymelds').innerHTML = kitaHTML(G.P[HUMAN], 'm') + G.P[HUMAN].melds.map(m => meldHTML(m, 'm')).reverse().join('');
 }
+function renderCheatBar() {
+  const b = $('#cheatbar'); if (!b) return;
+  const G = U.G;
+  if (!G || G.S.mode !== 'cheat' || !G.P[HUMAN]) { b.innerHTML = ''; return; }
+  const p = G.P[HUMAN];
+  b.innerHTML = `<button class="btn red cbtn" id="cbAcc">指摘</button><button class="btn purple cbtn" id="cbCheat" ${p.dead ? 'disabled' : ''}>イカサマ</button>`;
+}
 function renderQuick() {
+  renderCheatBar();
   const q = $('#quick'); if (!q) return;
   const items = [['autoWin', '自動和了', S.autoWin], ['autoSkip', '鳴きなし', S.autoSkip], ['autoGiri', 'ツモ切り', !!U.autoGiri]];
   q.innerHTML = items.map(([k, l, on]) => `<button class="qbtn ${on ? 'on' : ''}" data-k="${k}">${l}</button>`).join('');
@@ -1889,7 +2000,7 @@ function renderCard(s) {
     (s === HUMAN ? '' : `<div class="nm">${esc(p.name)}</div><div class="ttl">${p.char.title}</div>`) +
     `<div class="sc">${p.score.toLocaleString()}</div>` +
     (S.mode === 'cheat' ? `<div class="gauge" title="打牌するたびに溜まる">${[...Array(CHARGE_TURNS)].map((_, i) => `<i class="${i < (p.charge || 0) ? 'on' : ''}"></i>`).join('')}</div>` : '') +
-    `<div class="badges"><span class="badge w ${G.dealer === s ? 'dealer' : ''}">${WIND_JP[G.seatWind(s)]}${G.dealer === s ? '・親' : ''}</span>${p.riichi ? '<span class="badge riichi">リーチ</span>' : ''}${S.mode === 'cheat' ? `<span class="badge cheat" id="cb${s}">イカサマ${p.cheatPts ?? 0}pt</span>` : ''}</div>`;
+    `<div class="badges"><span class="badge w ${G.dealer === s ? 'dealer' : ''}">${WIND_JP[G.seatWind(s)]}${G.dealer === s ? '・親' : ''}</span>${p.riichi ? '<span class="badge riichi">リーチ</span>' : ''}${p.dead ? '<span class="badge dead">アガリ放棄</span>' : ''}${S.mode === 'cheat' ? `<span class="badge cheat" id="cb${s}">イカサマ${p.cheatPts ?? 0}pt</span>` : ''}</div>`;
 }
 
 // 手牌解析(ヒント用)
@@ -1959,6 +2070,7 @@ function renderHand() {
       else info = `<div class="pill">切ったあと あと <b>${best}</b> 枚でテンパイ</div>`;
     }
   }
+  if (p.dead) info = `<div class="pill" style="border-color:#ff8fa3"><b style="color:#ff8fa3">アガリ放棄中</b>　この局はアガれません。振り込まないように切りましょう</div>`;
   if (U.riichiMode) info = `<div class="pill tenpai"><b>リーチ</b>　明るい牌から切る牌を選んでください</div>`;
   if (U.pickMode) info = `<div class="pill" style="border-color:#c77dff"><b style="color:#c77dff">${U.pickMode.msg}</b></div>`;
   $('#info').innerHTML = info;
@@ -2230,37 +2342,17 @@ const IO = {
   },
   // ---- イカサマ ----
   humanStack(G, seat) { return stackUI(G); },
+  // 指摘の受付: 画面には何も出さない(常時の指摘ボタンで押す)
   accuseWindow(G, target, info, humanSeats, cpuAcc, cpuTime) {
-    const humanSeat = (Array.isArray(humanSeats) ? humanSeats.includes(HUMAN) : humanSeats >= 0) ? HUMAN : -1;
+    const humanCan = Array.isArray(humanSeats) ? humanSeats.includes(HUMAN) : humanSeats >= 0;
     return new Promise(resolve => {
-      const box = $('#accuse');
-      const tp = G.P[target];
-      const isStack = info.tech === 'stack';
-      let msg;
-      if (target === HUMAN) msg = isStack ? '積み込み完了…バレるな…！' : 'バレるな…！';
-      else msg = isStack ? `<b style="color:#ffd166">${tp.name}</b> の配牌の手つきが怪しい…？` : `<b style="color:#ffd166">${tp.name}</b> の手が怪しい動きをした…！`;
       const win = S.window * 1000;
-      box.innerHTML = `<div class="msg">${msg}</div>` + (humanSeat >= 0 ? `<div style="display:flex;gap:12px;justify-content:center"><button class="btn red" id="accBtn">指摘する！</button><button class="btn gray small" id="skipBtn">見逃す</button></div>` : '') + `<div class="bar"><i></i></div>`;
-      box.style.display = 'block';
-      const bar = box.querySelector('.bar i');
-      const t0 = performance.now();
-      let done = false;
-      const finish = (who) => { if (done) return; done = true; U.accuseCancel = null; cancelAnimationFrame(raf); box.style.display = 'none'; resolve(who); };
+      let done = false, t1 = null, t2 = null;
+      const finish = who => { if (done) return; done = true; clearTimeout(t1); clearTimeout(t2); if (U.accuseActive && U.accuseActive.finish === finish) U.accuseActive = null; U.accuseCancel = null; resolve(who); };
+      U.accuseActive = { target, humanCan, finish };
       U.accuseCancel = () => finish(-2);
-      let raf;
-      const tick = () => {
-        const el = performance.now() - t0;
-        bar.style.transform = `scaleX(${Math.max(0, 1 - el / win)})`;
-        if (cpuAcc !== null && el >= cpuTime) return finish(cpuAcc);
-        if (el >= win) return finish(null);
-        raf = requestAnimationFrame(tick);
-      };
-      raf = requestAnimationFrame(tick);
-      if (humanSeat >= 0) {
-        box.querySelector('#accBtn').onclick = () => finish(humanSeat);
-        box.querySelector('#skipBtn').onclick = () => { if (cpuAcc !== null) { /* 見逃してもCPUは指摘するかも */ } finish(cpuAcc !== null && Math.random() < 0.5 ? cpuAcc : null); };
-      }
-      if (target !== HUMAN) Snd.se('suspense');
+      if (cpuAcc !== null && cpuAcc !== undefined) t1 = setTimeout(() => finish(cpuAcc), cpuTime);
+      t2 = setTimeout(() => finish(null), win);
     });
   },
   async cheatPassed(G, target, info) {
@@ -2282,11 +2374,11 @@ const IO = {
     const col = outcome === 'caught' ? '#ff4d6d' : '#4cc9f0';
     const desc = outcome === 'caught'
       ? `${A.name} が ${Tg.name} の${rs.info.tech === 'stack' ? '積み込み' : TECH[rs.info.tech] ? TECH[rs.info.tech].name : 'イカサマ'}を見破った！`
-      : `${Tg.name} は${rs.info.tech === 'stack' ? '積み込んでいなかった' : 'ブラフだった'}！ ${A.name} がアウト！`;
+      : `${Tg.name} は${rs.info.tech === 'stack' ? '積み込んでいなかった' : rs.info.tech === 'none' ? '何もしていなかった' : 'ブラフだった'}！ ${A.name} がアウト！`;
     const payer = outcome === 'caught' ? Tg : A, recv = outcome === 'caught' ? A : Tg;
     setTimeout(() => { const vt = sayLine(Tg, outcome === 'caught' ? 'caught' : 'innocent'); bubble(target, vt.text, 2400); }, 300);
     const ov = overlay(`<div style="text-align:center"><div class="banner" style="position:static;font-size:110px;text-shadow:0 6px 0 rgba(0,0,0,.5),0 0 40px ${col}">${big}</div>
-      <div class="panel" style="margin-top:10px;font-size:20px;font-weight:700">${desc}<div style="margin-top:10px;font-size:24px">${payer.name} → ${recv.name}　<b style="color:#ffd166">${pen.toLocaleString()}点</b></div>${outcome === 'caught' && rs.info.tech !== 'stack' ? `<div style="margin-top:8px;font-size:17px;color:#ff8fa3">${Tg.name} はこの手番アガれない！牌を1枚切らなければならない</div>` : ''}<div style="margin-top:6px;font-size:16px;color:#c77dff">${outcome === 'caught' ? A.name : Tg.name} のイカサマポイント +1pt</div>
+      <div class="panel" style="margin-top:10px;font-size:20px;font-weight:700">${desc}<div style="margin-top:10px;font-size:24px">${payer.name} → ${recv.name}　<b style="color:#ffd166">${pen.toLocaleString()}点</b></div><div style="margin-top:8px;font-size:17px;color:#ff8fa3">${payer.name} はこの局アガリ放棄！（リーチ・鳴き・イカサマもできません）</div>${outcome === 'caught' ? `<div style="margin-top:6px;font-size:16px;color:#c77dff">${A.name} のイカサマポイント +1pt</div>` : ''}
       <div style="margin-top:14px"><button class="btn gold small">OK</button></div></div></div>`);
     await Promise.race([waitClick(ov, 'button'), sleep(4500)]); ov.remove();
     render();
@@ -2302,7 +2394,8 @@ const IO = {
     const sx = pos.x - 55, sy = pos.y - 55, ex = target.x - 55, ey = target.y - 55;
     h.animate([{ transform: `translate(${sx}px,${sy}px) rotate(-20deg) scale(.6)`, opacity: 0 }, { transform: `translate(${(sx + ex) / 2}px,${(sy + ey) / 2 - 40}px) rotate(10deg) scale(1)`, opacity: 1, offset: 0.4 }, { transform: `translate(${ex}px,${ey}px) rotate(0) scale(.9)`, opacity: 1, offset: 0.7 }, { transform: `translate(${sx}px,${sy}px) rotate(-20deg) scale(.6)`, opacity: 0 }], { duration: 1100, easing: 'ease-in-out' });
     const lab = document.createElement('div'); lab.className = 'sus-label';
-    lab.textContent = seat === HUMAN ? (x.real ? TECH[x.tech].name + '…！' : 'ブラフ（' + TECH[x.shown].name + 'のフリ）') : 'スッ…';
+    const nm = k => (TECH[k] ? TECH[k].name : '積み込み');
+    lab.textContent = seat === HUMAN ? (x.real ? nm(x.tech) + '…！' : 'ブラフ（' + nm(x.shown) + 'のフリ）') : 'スッ…';
     lab.style.left = (target.x - 60) + 'px'; lab.style.top = (target.y - 90) + 'px';
     $('#fx').appendChild(lab);
     await sleep(1100);
@@ -2327,16 +2420,16 @@ function turnButtons() {
   for (const k of o.kakan) list.push({ label: 'カン', cls: 'blue', fn: () => t.resolve({ type: 'kakan', kind: k }) });
   if (o.kita && !U.riichiMode) list.push({ label: '北抜き', cls: 'gold', fn: () => t.resolve({ type: 'kita' }) });
   if (o.kita && p.riichi && !o.tsumo) list.push({ label: 'ツモ切り', cls: 'gray small', fn: () => t.resolve({ type: 'discard', id: p.drawn }) });
-  if (S.mode === 'cheat' && !p.riichi && !t.ctx.afterCall && p.cheatPts > 0 && !p.cheatedTurn && !U.riichiMode) list.push({ label: 'イカサマ', cls: 'purple', fn: () => cheatMenu() });
   if (o.tsumo && !S.autoWin) list.push({ label: 'ツモらない', cls: 'gray small', fn: () => { o.tsumo = null; turnButtons(); } });
   setActions(list);
 }
 
 function onHandClick(e) {
-  const el = e.target.closest('.t'); if (!el || !U.turn) return;
+  const el = e.target.closest('.t'); if (!el) return;
   const id = +el.dataset.id;
-  const G = U.G, p = G.P[HUMAN], t = U.turn;
   if (U.pickMode) { U.pickMode.onHand(id); return; }
+  if (!U.turn) return;
+  const G = U.G, p = G.P[HUMAN], t = U.turn;
   if (p.riichi) { if (id === p.drawn) t.resolve({ type: 'discard', id }); return; }
   if (U.riichiMode && !t.o.riichi.includes(id >> 2)) { Snd.se('ng'); return; }
   if (S.oneTap || U.sel === id) { t.resolve({ type: 'discard', id, riichi: U.riichiMode }); return; }
@@ -2347,8 +2440,8 @@ function onHandClick(e) {
 function cheatMenu() {
   const G = U.G, p = G.P[HUMAN];
   const ov = overlay(`<div class="panel" style="width:720px"><h2>イカサマ　<span style="font-size:16px;color:#c77dff">残り ${p.cheatPts}pt（最大${CHEAT_MAX}pt）</span></h2>
-   ${Object.entries(TECH).map(([k, t]) => `<div class="row" style="justify-content:space-between;background:#0b1210;padding:10px 14px;border-radius:14px"><div><b style="font-size:19px">${t.name}</b>　<span style="color:#c77dff">${t.cost}pt</span><div style="font-size:13px;color:#9fb3aa">${t.desc}　バレやすさ：${'★'.repeat(Math.round(t.vis * 5))}</div></div><button class="btn purple small" data-v="${k}" ${p.cheatPts < t.cost ? 'disabled' : ''}>使う</button></div>`).join('')}
-   <div style="font-size:13px;color:#9fb3aa;margin-top:8px">1ターンに使えるのは1回だけ。ポイントは、イカサマせずに${CHARGE_TURNS}回打牌する／ロンで放銃する／指摘を当てる／ブラフで相手に指摘を外させる、で1ptずつ溜まります。<br>使うと怪しい動きが他の人に見えます。指摘されたら罰符 ${S.penalty}点。ブラフを指摘させれば逆に相手から${S.penalty}点もらえます。</div>
+   ${Object.entries(TECH).filter(([k, t]) => !t.off).map(([k, t]) => `<div class="row" style="justify-content:space-between;background:#0b1210;padding:10px 14px;border-radius:14px"><div><b style="font-size:19px">${t.name}</b>　<span style="color:#c77dff">${t.cost}pt</span><div style="font-size:13px;color:#9fb3aa">${t.desc}　バレやすさ：${'★'.repeat(Math.round(t.vis * 5))}</div></div><button class="btn purple small" data-v="${k}" ${p.cheatPts < t.cost ? 'disabled' : ''}>使う</button></div>`).join('')}
+   <div style="font-size:13px;color:#9fb3aa;margin-top:8px">1ターンに使えるのは1回だけ。ポイントは、イカサマせずに${CHARGE_TURNS}回打牌する／ロンで放銃する／指摘を当てる、で1ptずつ溜まります。<br>使うと怪しい動きが他の人に見えます。指摘されたら罰符 ${S.penalty}点を払い、<b style="color:#ff8fa3">その局はアガリ放棄</b>。ブラフを指摘させれば、逆に相手が罰符を払ってアガリ放棄になります。</div>
    <div style="text-align:center;margin-top:12px"><button class="btn gray small" data-v="cancel">やめる</button></div></div>`);
   waitClick(ov, 'button').then(v => {
     ov.remove();
@@ -2362,7 +2455,7 @@ function cheatMenu() {
 function pickHandTile(msg, cb) {
   U.pickMode = { msg, onHand: id => { U.pickMode.handSel = id; renderHand(); setTimeout(() => { const pm = U.pickMode; U.pickMode = null; cb(id); }, 250); } };
   renderHand();
-  setActions([{ label: 'やめる', cls: 'gray small', fn: () => { U.pickMode = null; renderHand(); turnButtons(); } }]);
+  setActions([{ label: 'やめる', cls: 'gray small', fn: () => { U.pickMode = null; setActions([]); renderHand(); turnButtons(); } }]);
 }
 function elevatorUI() {
   const G = U.G;
@@ -2401,9 +2494,89 @@ function riverUI() {
 }
 function bluffPick() {
   const ov = overlay(`<div class="panel" style="text-align:center"><h2>ブラフ</h2><div>どの技のフリをする？（本当は何もしない）</div>
-   <div style="display:flex;gap:12px;justify-content:center;margin:16px 0">${['elevator', 'bukko', 'river'].map(k => `<button class="btn purple small" data-v="${k}">${TECH[k].name}のフリ</button>`).join('')}</div>
+   <div style="display:flex;gap:12px;justify-content:center;margin:16px 0">${['elevator', 'bukko', 'river', 'shift'].map(k => `<button class="btn purple small" data-v="${k}">${TECH[k].name}のフリ</button>`).join('')}</div>
    <button class="btn gray small" data-v="cancel">やめる</button></div>`);
   waitClick(ov, 'button').then(v => { ov.remove(); if (v === 'cancel') return; U.turn.resolve({ type: 'cheat', tech: 'bluff', fake: v }); });
+}
+
+// ---------- 常時の指摘ボタン ----------
+function onAccuseButton() {
+  const G = U.G; if (!G) return;
+  const a = U.accuseActive;
+  if (a && a.humanCan) { Snd.se('accuse'); a.finish(HUMAN); return; }
+  if (a && a.target === HUMAN) { toast('いまは自分のイカサマの直後です', 1500); return; }
+  // 何も起きていないときは相手を選ぶ
+  const others = G.P.map((p, s) => s).filter(s => s !== HUMAN);
+  const ov = overlay(`<div class="panel" style="text-align:center;width:620px"><h2>誰を指摘する？</h2>
+    <div style="font-size:14px;color:#ff8fa3;margin-bottom:12px">直前に怪しい動きがなかった相手を指摘すると、冤罪で罰符${S.penalty}点＋アガリ放棄です</div>
+    <div style="display:flex;gap:16px;justify-content:center">${others.map(s => `<div data-v="${s}" style="cursor:pointer;text-align:center"><div style="width:84px;height:84px;border-radius:50%;background:center/cover url('${avatarURL(G.P[s].icon)}');box-shadow:0 0 0 3px #ff4d6d;margin:0 auto 6px"></div><b>${esc(G.P[s].name)}</b></div>`).join('')}</div>
+    <div style="margin-top:16px"><button class="btn gray small" data-v="cancel">やめる</button></div></div>`);
+  waitClick(ov, '[data-v]').then(v => {
+    ov.remove(); if (v === 'cancel') return;
+    const target = +v;
+    // 選んでいる間に怪しい動きがあれば、それへの指摘になる
+    const a2 = U.accuseActive;
+    if (a2 && a2.humanCan && a2.target === target) { Snd.se('accuse'); a2.finish(HUMAN); return; }
+    Snd.se('accuse');
+    sendOffAction({ type: 'free', target });
+  });
+}
+function sendOffAction(item) {
+  const G = U.G;
+  if (U.online && U.online.role === 'guest') {
+    const H = s => Guest.H(s);
+    if (item.type === 'free') Net.emit({ t: 'freeAcc', target: H(item.target) });
+    else Net.emit({ t: 'offCheat', act: item.act });
+    toast(item.type === 'free' ? '指摘！' : 'スッ…', 1000);
+    return;
+  }
+  if (item.type === 'free' && U.turn) {
+    // 自分の手番中(エンジンが待っている間)はその場で処理
+    G.freeAccuse(HUMAN, item.target).then(() => {
+      const t = U.turn, p = G.P[HUMAN];
+      if (t && p.dead) { t.o.tsumo = null; t.o.riichi = []; t.o.ankan = []; t.o.kakan = []; U.riichiMode = false; }
+      render(); turnButtons();
+    });
+    return;
+  }
+  if (item.type === 'free') G.queueAction({ type: 'free', accuser: HUMAN, target: item.target });
+  else G.queueAction({ type: 'off', seat: HUMAN, act: item.act });
+  toast(item.type === 'free' ? '指摘！' : 'スッ…（次の区切りで実行）', 1200);
+}
+function canOffCheatUI(G) {
+  const p = G.P[HUMAN];
+  if (!p || p.dead || p.riichi || G.turnSeat === HUMAN) return false;
+  return p.lastOff === undefined || p.lastOff === null || (G.discardNo || 0) - p.lastOff >= G.N;
+}
+function onCheatButton() {
+  const G = U.G; if (!G) return;
+  const p = G.P[HUMAN];
+  if (p.dead) return;
+  if (U.turn) {
+    if (p.riichi || U.turn.ctx.afterCall || p.cheatedTurn) { toast('いまはイカサマできません', 1500); return; }
+    return cheatMenu();
+  }
+  if (!canOffCheatUI(G)) { toast(G.turnSeat === HUMAN ? '自分の番を待ってください' : '手番外のイカサマは1巡に1回までです', 1600); return; }
+  const ld = G.lastDiscard;
+  const ldOk = ld && ld.seat !== HUMAN && G.P[ld.seat] && G.P[ld.seat].river.length && !G.P[ld.seat].river[G.P[ld.seat].river.length - 1].called;
+  const ldTile = ldOk ? G.P[ld.seat].river[G.P[ld.seat].river.length - 1].id : null;
+  const opt = (k, extra, ok) => `<div class="row" style="justify-content:space-between;background:#0b1210;padding:10px 14px;border-radius:14px"><div><b style="font-size:19px">${TECH[k].name}</b>　<span style="color:#c77dff">${TECH[k].cost}pt</span>${extra || ''}<div style="font-size:13px;color:#9fb3aa">${k === 'river' ? '直前の捨て牌を、ポンやチーされる前に手牌とすり替える' : TECH[k].desc}　バレやすさ：${'★'.repeat(Math.round(TECH[k].vis * 5))}</div></div><button class="btn purple small" data-v="${k}" ${p.cheatPts < TECH[k].cost || !ok ? 'disabled' : ''}>使う</button></div>`;
+  const ov = overlay(`<div class="panel" style="width:720px"><h2>手番外のイカサマ　<span style="font-size:16px;color:#c77dff">残り ${p.cheatPts}pt</span></h2>
+    ${opt('river', ldOk ? '　' + T(ldTile, 'xs') : '', ldOk)}${opt('shift', '', G.live.length >= 2)}${opt('bluff', '', true)}
+    <div style="font-size:13px;color:#9fb3aa;margin-top:8px">手番外のイカサマは1巡に1回まで。次の区切り（誰かが牌を切った直後など）で実行されます。</div>
+    <div style="text-align:center;margin-top:12px"><button class="btn gray small" data-v="cancel">やめる</button></div></div>`);
+  waitClick(ov, 'button').then(v => {
+    ov.remove();
+    if (v === 'cancel') return;
+    if (v === 'shift') return sendOffAction({ type: 'off', act: { tech: 'shift' } });
+    if (v === 'bluff') {
+      const o2 = overlay(`<div class="panel" style="text-align:center"><h2>ブラフ</h2><div>どの技のフリをする？</div><div style="display:flex;gap:12px;justify-content:center;margin:16px 0">${['river', 'shift'].map(k => `<button class="btn purple small" data-v="${k}">${TECH[k].name}のフリ</button>`).join('')}</div><button class="btn gray small" data-v="cancel">やめる</button></div>`);
+      return waitClick(o2, 'button').then(f => { o2.remove(); if (f !== 'cancel') sendOffAction({ type: 'off', act: { tech: 'bluff', fake: f } }); });
+    }
+    if (v === 'river') {
+      pickHandTile(`${tileName(ldTile >> 2)} とすり替える手牌をタップ`, id => { setActions([]); renderHand(); sendOffAction({ type: 'off', act: { tech: 'river', handId: id } }); });
+    }
+  });
 }
 
 // 積み込みフェーズ
@@ -2511,8 +2684,8 @@ function openHelp() {
    リーチ・ツモ・ロン・ポン・チー・カンはできるときだけボタンが出ます。テンパイ中は待ち牌と残り枚数が表示されます。<br>
    <b>アガリの条件</b>：4つの面子（同じ牌3枚か、続き番号3枚）＋雀頭（同じ牌2枚）を作り、役が1つ以上あること。迷ったら門前でリーチ！<br>
    <b>3人麻雀</b>：設定の「人数」で選べます。二萬〜八萬を抜いた108枚で遊び、チーはなし、北は役牌です。北を引いたら<b>北抜き</b>ボタンで横に抜くと、1枚ごとにドラ1つになり、代わりの牌を引けます（ツモアガリは2人から受け取る「ツモ損」ルール）。<br>
-   <b>イカサマ麻雀</b>：局のはじめにポイントがあれば<b>積み込み</b>で好きな牌を配牌に仕込めます。イカサマは<b>イカサマポイント</b>を消費します（最初2pt・最大10pt）。<b>積み込みは8pt</b>（最大6枚、タイミング失敗でもポイントは戻らない）なので半荘で1〜2回の大技。エレベーター・河拾い3pt、ぶっこ抜き5pt、ブラフ2ptです。ポイントは対局中に溜まります：<b>イカサマせずに10回打牌</b>（カードのゲージが満タン）、<b>ロンで放銃する</b>、<b>指摘を当てる</b>、<b>ブラフで相手に指摘を外させる</b>でそれぞれ+1pt。溜めて、ここぞという局で一気に使いましょう。自分の番には1ターン1回まで<b>エレベーター</b>（次の山の牌と交換）、<b>ぶっこ抜き</b>（山から好きな牌を抜く）、<b>河拾い</b>（捨て牌を拾う）、<b>ブラフ</b>（フリだけ）ができます。<br>
-   誰かが怪しい動きをすると数秒だけ<b>「指摘する！」</b>ボタンが出ます。本当にイカサマなら相手から罰符をもらえ、ブラフだったら指摘した側が罰符を払います。CPUも積み込み・ブラフ・指摘をしてきます。キャラによってクセがあるので見抜いてください。</div>
+   <b>イカサマ麻雀</b>：局のはじめにポイントがあれば<b>積み込み</b>で好きな牌を配牌に仕込めます。イカサマは<b>イカサマポイント</b>を消費します（最初2pt・最大10pt）。<b>積み込みは8pt</b>（最大6枚、タイミング失敗でもポイントは戻らない）なので半荘で1〜2回の大技。エレベーター・河拾い3pt、ぶっこ抜き5pt、ブラフ2ptです。ポイントは対局中に溜まります：<b>イカサマせずに10回打牌</b>（カードのゲージが満タン）、<b>ロンで放銃する</b>、<b>指摘を当てる</b>でそれぞれ+1pt。溜めて、ここぞという局で一気に使いましょう。手番外でも1巡に1回まで<b>河拾い</b>（直前の捨て牌をすり替える）・<b>山ずらし</b>（次にツモられる牌をずらす）・<b>ブラフ</b>が使えます（「イカサマ」ボタンから）。自分の番には1ターン1回まで<b>エレベーター</b>（次の山の牌と交換）、<b>ぶっこ抜き</b>（山から好きな牌を抜く）、<b>河拾い</b>（捨て牌を拾う）、<b>ブラフ</b>（フリだけ）ができます。<br>
+   画面右の<b>「指摘」ボタン</b>はいつでも押せます。誰かの手がスッと動いたら、数秒以内に押すとその人を指摘します（ボタンは光らないので、自分の目で見抜いてください）。何も起きていないときに押すと、相手を選んで指摘しますが、その相手が何もしていなければ冤罪です。本当にイカサマなら相手から罰符をもらえて、相手はその局<b>アガリ放棄</b>（リーチ・鳴き・イカサマもできず、流局時はノーテン）。ブラフだったら指摘した側が罰符を払い、アガリ放棄になります。手が良いときは見逃す、という判断も大事です。CPUも積み込み・ブラフ・指摘をしてきます。キャラによってクセがあるので見抜いてください。</div>
    <h3>役の一覧</h3>${YAKU_HELP.map(([h, t]) => `<div class="row"><span class="lbl" style="width:60px;color:#ffd166">${h}</span><span style="flex:1;font-size:14px">${t}</span></div>`).join('')}
    <div style="text-align:center;margin-top:14px"><button class="btn gold">閉じる</button></div></div>`);
   return waitClick(ov, 'button').then(() => ov.remove());
@@ -2578,6 +2751,11 @@ function init() {
     $('#game').appendChild(c);
   }
   $('#hand').addEventListener('click', onHandClick);
+  $('#cheatbar').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || !U.G) return;
+    if (b.id === 'cbAcc') onAccuseButton();
+    if (b.id === 'cbCheat') onCheatButton();
+  });
   $('#quick').addEventListener('click', e => {
     const b = e.target.closest('.qbtn'); if (!b) return;
     const k = b.dataset.k; Snd.se('select');
@@ -2617,11 +2795,12 @@ function snap(G) {
   return {
     d: G.dealer, sd: G.startDealer, rw: G.roundWind, k: G.kyoku, h: G.honba, kt: G.kyotaku, hn: G.handNo,
     lv: enc(G.live), di: enc(G.doraInd), ui: enc(G.uraInd), ri: G.rinIdx || 0, kc: G.kanCount || 0,
+    dn: G.discardNo || 0, ts: G.turnSeat ?? -1, ld: G.lastDiscard ? [G.lastDiscard.seat, G.lastDiscard.id] : null,
     P: G.P.map(p => ({
       sc: p.score, h: enc(p.hand), m: p.melds.map(m => [m.type, enc(m.tiles), m.calledId ?? -1, m.from || 0, m.added ?? -1]),
       r: enc(p.river.map(x => x.id)), rf: p.river.map(x => (x.riichi ? 1 : 0) | (x.called ? 2 : 0)).join(''),
       dk: enc([...(p.discardKinds || [])]), ri: p.riichi ? 1 : 0, cp: p.cheatPts || 0, ch: p.charge || 0,
-      ki: enc(p.kitaIds || []), dr: (p.drawn === null || p.drawn === undefined) ? -1 : p.drawn, ct: p.cheatedTurn ? 1 : 0,
+      ki: enc(p.kitaIds || []), dr: (p.drawn === null || p.drawn === undefined) ? -1 : p.drawn, ct: p.cheatedTurn ? 1 : 0, dd: p.dead ? 1 : 0, lo: (p.lastOff === undefined || p.lastOff === null) ? -99 : p.lastOff,
     })),
   };
 }
@@ -2737,6 +2916,17 @@ const Host = {
       }
       case 'bye': { const i = this.seats.findIndex(x => x.peer === peer); if (i > 0 && !this.playing) { this.seats.splice(i, 1); this.bLobby(); } break; }
       case 'ans': { const a = this.asks[d.id]; if (a && a.peer === peer) this.finishAsk(d.id, d.v); break; }
+      case 'freeAcc': {
+        const seat = this.seatPeer.indexOf(peer);
+        if (seat > 0 && this.game && Number.isInteger(d.target) && d.target >= 0 && d.target < this.game.N && d.target !== seat) this.game.queueAction({ type: 'free', accuser: seat, target: d.target });
+        break;
+      }
+      case 'offCheat': {
+        const seat = this.seatPeer.indexOf(peer);
+        const a = d.act || {};
+        if (seat > 0 && this.game) this.game.queueAction({ type: 'off', seat, act: { tech: String(a.tech), handId: Number(a.handId), fake: String(a.fake || '') } });
+        break;
+      }
       case 'accHit': { const w = this.accWins[d.id]; const seat = this.seatPeer.indexOf(peer); if (w && seat > 0 && w.humans.includes(seat)) w.finish(seat); break; }
     }
   },
@@ -2924,13 +3114,14 @@ const Guest = {
     const G = this.G, L = x => this.L(x);
     G.dealer = L(s.d); G.startDealer = L(s.sd); G.roundWind = s.rw; G.kyoku = s.k; G.honba = s.h; G.kyotaku = s.kt; G.handNo = s.hn;
     G.live = dec(s.lv); G.doraInd = dec(s.di); G.uraInd = dec(s.ui); G.rinIdx = s.ri; G.kanCount = s.kc;
+    G.discardNo = s.dn || 0; G.turnSeat = (s.ts === undefined || s.ts < 0) ? -1 : L(s.ts); G.lastDiscard = s.ld ? { seat: L(s.ld[0]), id: s.ld[1] } : null;
     s.P.forEach((q, hs) => {
       const p = G.P[L(hs)];
       p.score = q.sc; p.hand = dec(q.h);
       p.melds = q.m.map(([type, t, c, from, added]) => { const m = { type, tiles: dec(t), from }; if (c >= 0) m.calledId = c; if (added >= 0) m.added = added; return m; });
       p.river = dec(q.r).map((id, i) => { const f = +q.rf[i] || 0; return { id, riichi: !!(f & 1), called: !!(f & 2) }; });
       p.discardKinds = new Set(dec(q.dk)); p.riichi = !!q.ri; p.cheatPts = q.cp; p.charge = q.ch;
-      p.kitaIds = dec(q.ki); p.kita = p.kitaIds.length; p.drawn = q.dr < 0 ? null : q.dr; p.cheatedTurn = !!q.ct;
+      p.kitaIds = dec(q.ki); p.kita = p.kitaIds.length; p.drawn = q.dr < 0 ? null : q.dr; p.cheatedTurn = !!q.ct; p.dead = !!q.dd; p.lastOff = q.lo === -99 ? null : q.lo;
     });
   },
   remap(fn, a) {
