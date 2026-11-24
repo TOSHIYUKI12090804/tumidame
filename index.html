@@ -1544,10 +1544,14 @@ const Snd = {
   bgmOn: true, seOn: true, voiceOn: true,
   timer: null, nextT: 0, step: 0, tension: false, playing: false,
   init() {
-    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    // iPhoneのマナーモード中でも音を出す(Safari 16.4以降)
+    try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { }
+    if (this.ctx) { if (this.ctx.state !== 'running') this.ctx.resume().catch(() => { }); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     const ctx = this.ctx = new AC();
+    try { const b = ctx.createBuffer(1, 1, 22050); const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); } catch (e) { }
+    if (ctx.state !== 'running') ctx.resume().catch(() => { });
     this.master = ctx.createGain(); this.master.gain.value = 0.9; this.master.connect(ctx.destination);
     const comp = ctx.createDynamicsCompressor(); comp.connect(this.master);
     this.bgmG = ctx.createGain(); this.bgmG.gain.value = this.bgmOn ? 0.32 : 0; this.bgmG.connect(comp);
@@ -1672,6 +1676,14 @@ const Snd = {
     } catch (e) { return est; }
   },
 };
+
+// 画面に触れるたび、止まっている音を再開する(iPhone対策)
+['pointerdown', 'touchend', 'keydown'].forEach(ev => window.addEventListener(ev, () => {
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { }
+  if (Snd.ctx && Snd.ctx.state !== 'running') Snd.ctx.resume().catch(() => { });
+  if (window.speechSynthesis && speechSynthesis.paused) speechSynthesis.resume();
+}, { passive: true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Snd.ctx && Snd.ctx.state !== 'running') Snd.ctx.resume().catch(() => { }); });
 
 // ===================== キャラボイス・セリフ =====================
 // ファイル名: {VOICE_ID}_{種類}.mp3   例: tsumiko_ron_mangan.mp3
