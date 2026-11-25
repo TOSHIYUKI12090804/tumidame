@@ -1784,6 +1784,7 @@ const Snd = {
   bgmStart(track) {
     if (track) { if (track !== this.track) { this.track = track; this.step = 0; } }
     if (!this.ctx || !this.bgmOn) return;
+    this.started = true;
     if (this.playing) return;
     this.playing = true; this.nextT = this.ctx.currentTime + 0.1;
     clearInterval(this.timer);
@@ -1862,7 +1863,6 @@ const Snd = {
   },
   // 画面を閉じたら止める
   pauseAll() {
-    this.wasPlaying = this.playing;
     this.bgmStop();
     try { if (window.speechSynthesis) speechSynthesis.cancel(); } catch (e) { }
     if (this.ctx && this.ctx.state === 'running') this.ctx.suspend().catch(() => { });
@@ -1870,8 +1870,8 @@ const Snd = {
   resumeAll() {
     if (!this.ctx) return;
     this.ctx.resume().catch(() => { });
-    if (this.wasPlaying && this.bgmOn) this.bgmStart();
-    this.wasPlaying = false;
+    // BGMがONなら必ず再開(止める処理が何回呼ばれても大丈夫なように)
+    if (this.bgmOn && this.started) this.bgmStart();
   },
   // ---- 音声 ----
   voice(text, pitch = 1, rate = 1.1) {
@@ -1893,6 +1893,7 @@ const Snd = {
   if (document.hidden) return;
   try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { }
   if (Snd.ctx && Snd.ctx.state !== 'running') Snd.ctx.resume().catch(() => { });
+  if (Snd.ctx && Snd.bgmOn && Snd.started && !Snd.playing) Snd.bgmStart();
 }, { passive: true }));
 // 画面を閉じた・別アプリに切り替えたら音を止め、戻ったら再開
 document.addEventListener('visibilitychange', () => { if (document.hidden) Snd.pauseAll(); else Snd.resumeAll(); });
@@ -2112,8 +2113,8 @@ function renderCard(s) {
   el.innerHTML = `<div class="av" style="background-image:url('${avatarURL(icon)}')"></div>` +
     (s === HUMAN ? '' : `<div class="nm">${esc(p.name)}</div><div class="ttl">${p.char.title}</div>`) +
     `<div class="sc">${p.score.toLocaleString()}</div>` +
-    (S.mode === 'cheat' ? `<div class="gauge" title="打牌するたびに溜まる">${[...Array(CHARGE_TURNS)].map((_, i) => `<i class="${i < (p.charge || 0) ? 'on' : ''}"></i>`).join('')}</div>` : '') +
-    `<div class="badges"><span class="badge w ${G.dealer === s ? 'dealer' : ''}">${WIND_JP[G.seatWind(s)]}${G.dealer === s ? '・親' : ''}</span>${p.riichi ? '<span class="badge riichi">リーチ</span>' : ''}${p.dead ? '<span class="badge dead">アガリ放棄</span>' : ''}${S.mode === 'cheat' ? `<span class="badge cheat" id="cb${s}">イカサマ${p.cheatPts ?? 0}pt</span>` : ''}</div>`;
+    (S.mode === 'cheat' && s === HUMAN ? `<div class="gauge" title="打牌するたびに溜まる">${[...Array(CHARGE_TURNS)].map((_, i) => `<i class="${i < (p.charge || 0) ? 'on' : ''}"></i>`).join('')}</div>` : '') +
+    `<div class="badges"><span class="badge w ${G.dealer === s ? 'dealer' : ''}">${WIND_JP[G.seatWind(s)]}${G.dealer === s ? '・親' : ''}</span>${p.riichi ? '<span class="badge riichi">リーチ</span>' : ''}${p.dead ? '<span class="badge dead">アガリ放棄</span>' : ''}${S.mode === 'cheat' && s === HUMAN ? `<span class="badge cheat" id="cb${s}">イカサマ${p.cheatPts ?? 0}pt</span>` : ''}</div>`;
 }
 
 // 手牌解析(ヒント用)
@@ -2422,7 +2423,7 @@ const IO = {
         <div class="yakulist reveal">${yk}</div>
         <div class="points reveal-pts">${head}${r.res.limit ? r.res.limit + '　' : ''}${r.pts}点</div>
         ${deltaHTML(G, r.deltas)}
-        ${r.gains && r.gains.length ? `<div style="text-align:center;margin-top:10px;color:#c77dff;font-weight:700">放銃した ${r.gains.map(s => G.P[s].name).join('・')} にイカサマポイント +1pt（反撃のチャンス）</div>` : ''}
+        ${r.gains && r.gains.includes(HUMAN) ? `<div style="text-align:center;margin-top:10px;color:#c77dff;font-weight:700">放銃したのでイカサマポイント +1pt（反撃のチャンス）</div>` : ''}
         <div style="text-align:center;margin-top:16px"><button class="btn gold" data-v="1">次へ</button></div></div>`);
       await revealResult(ov);
       await waitClick(ov, 'button'); ov.remove();
@@ -2492,7 +2493,7 @@ const IO = {
     const payer = outcome === 'caught' ? Tg : A, recv = outcome === 'caught' ? A : Tg;
     setTimeout(() => { const vt = sayLine(Tg, outcome === 'caught' ? 'caught' : 'innocent'); bubble(target, vt.text, 2400); }, 300);
     const ov = overlay(`<div style="text-align:center"><div class="banner" style="position:static;font-size:110px;text-shadow:0 6px 0 rgba(0,0,0,.5),0 0 40px ${col}">${big}</div>
-      <div class="panel" style="margin-top:10px;font-size:20px;font-weight:700">${desc}<div style="margin-top:10px;font-size:24px">${payer.name} → ${recv.name}　<b style="color:#ffd166">${pen.toLocaleString()}点</b></div><div style="margin-top:8px;font-size:17px;color:#ff8fa3">${payer.name} はこの局アガリ放棄！（リーチ・鳴き・イカサマもできません）</div>${outcome === 'caught' ? `<div style="margin-top:6px;font-size:16px;color:#c77dff">${A.name} のイカサマポイント +1pt</div>` : ''}
+      <div class="panel" style="margin-top:10px;font-size:20px;font-weight:700">${desc}<div style="margin-top:10px;font-size:24px">${payer.name} → ${recv.name}　<b style="color:#ffd166">${pen.toLocaleString()}点</b></div><div style="margin-top:8px;font-size:17px;color:#ff8fa3">${payer.name} はこの局アガリ放棄！（リーチ・鳴き・イカサマもできません）</div>${outcome === 'caught' && accuser === HUMAN ? `<div style="margin-top:6px;font-size:16px;color:#c77dff">イカサマポイント +1pt</div>` : ''}
       <div style="margin-top:14px"><button class="btn gold small">OK</button></div></div></div>`);
     await Promise.race([waitClick(ov, 'button'), sleep(4500)]); ov.remove();
     render();
