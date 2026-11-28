@@ -391,6 +391,10 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 #lobbyPanel .lbprof .av{width:46px;height:46px}
 #lobbyPanel .lbrules .row{margin:2px 0}
 #lobbyPanel .lbrules .seg button{padding:5px 12px}
+
+#lobbyPanel .codebox{display:flex;align-items:center;justify-content:center;gap:18px;margin:0 0 6px}
+#lobbyPanel .codebox .online-code{margin:0;cursor:pointer;user-select:all;-webkit-user-select:all}
+#lobbyPanel .codebox .btn.small{padding:6px 14px;font-size:15px}
 </style>
 </head>
 <body>
@@ -3966,7 +3970,7 @@ const Lobby = {
       const B = P.querySelector('#lbBody');
       B.innerHTML = `
         <div style="text-align:center;color:#cfe0d8">このページのURLと、下の<b style="color:#ffd166">部屋コード</b>を友達に送ってください</div>
-        <div class="online-code">${esc(Net.code)}</div>
+        <div class="codebox"><div class="online-code" id="lbCode2" title="タップでコピー">${esc(Net.code)}</div><div style="display:flex;flex-direction:column;gap:6px"><button class="btn blue small" id="lbCopy">コードをコピー</button>${Net.kind === 'firebase' ? '<button class="btn purple small" id="lbCopyInv">招待文をコピー</button>' : ''}</div></div>
         ${this.seatsHTML(Host.seats.map(s => ({ p: s.peer, n: s.name, i: s.icon })), S.players, null)}
         <div class="lbrules"><div style="display:grid;grid-template-columns:1fr 1fr;column-gap:10px">${segRow('人数', 'players', [[4, '4人麻雀'], [3, '3人麻雀']])}${segRow('モード', 'mode', [['normal', '通常'], ['cheat', 'イカサマ']])}${segRow('長さ', 'length', [['east', '東風戦'], ['south', '半荘戦']])}${segRow('鳴き', 'naki', yn)}${segRow('赤ドラ', 'red', yn)}${segRow('喰いタン', 'kuitan', yn)}${segRow('運気ポイント', 'luck', yn)}</div>
         ${S.mode === 'cheat' ? `<div style="display:grid;grid-template-columns:1fr 1fr;column-gap:10px">${segRow('最初のイカサマpt', 'cheatStart', [[0, '0pt'], [2, '2pt'], [4, '4pt']])}${segRow('罰符', 'penalty', [[2000, '2000'], [4000, '4000'], [8000, '8000']])}${segRow('指摘の受付', 'window', [[2, '2秒'], [3, '3秒'], [5, '5秒']])}</div>` : ''}</div>
@@ -3974,6 +3978,10 @@ const Lobby = {
       bindSeg(B);
       B.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => Host.bLobby()));
       B.querySelector('#lbStart').onclick = () => { Snd.init(); Host.start(); };
+      const cp = () => copyText(Net.code, 'コード「' + Net.code + '」をコピーしました');
+      B.querySelector('#lbCopy').onclick = cp; B.querySelector('#lbCode2').onclick = cp;
+      const inv = B.querySelector('#lbCopyInv');
+      if (inv) inv.onclick = () => copyText(`積み込んじゃダメだよ自分で麻雀しよう！\n${location.origin + location.pathname}\n「友達と遊ぶ」→ 部屋コード「${Net.code}」を入れて「部屋に入る」`, '招待文をコピーしました（LINEなどに貼り付けてね）');
       B.querySelector('#lbLeave').onclick = () => { Net.leave(); U.online = null; this.close(); };
       return;
     }
@@ -4025,6 +4033,18 @@ const Lobby = {
     };
   },
 };
+function copyText(text, msg) {
+  const done = ok => { Snd.se(ok ? 'ok' : 'ng'); toast(ok ? msg : 'コピーできませんでした。長押しで選んでコピーしてください', 2200); };
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0;font-size:16px';
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy'); ta.remove(); done(ok);
+    } catch (e) { done(false); }
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => done(true), fallback);
+  else fallback();
+}
 function pickChar() {
   return new Promise(resolve => {
     const all = PLAYER_CHARS.concat(CHARS);
