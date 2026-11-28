@@ -355,6 +355,9 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 .rangerfx i{position:absolute;width:300px;height:300px;margin:-150px 0 0 -150px;border-radius:50%;mix-blend-mode:screen}
 
 .heartfx i{background:none;border-radius:0;box-shadow:none;width:auto;height:auto}
+
+.cutin.sw .word{font-size:78px;top:52px;letter-spacing:3px}
+.cutin.sw .line{font-size:34px;top:150px}
 </style>
 </head>
 <body>
@@ -2442,7 +2445,7 @@ async function cutin(G, seat, kind, word, line, opt = {}) {
   if (!S.cutin) { banner(word, seat, kind === 'call' ? 70 : 90); await sleep((kind === 'call' ? 700 : 1200) * (kind === 'call' ? speed() : 1)); return; }
   const p = G.P[seat];
   const rose = !opt.img && kind === 'riichi' && p.icon === 'okosama' && ASSETS.av_okosama_purple;
-  const dur = opt.dur || (rose ? 2000 : { call: 950, riichi: 1300, win: 1900, big: 2200, yakuman: 3000 }[kind]);
+  const dur = opt.dur || (rose ? 2500 : { call: 1250, riichi: 1700, win: 2400, big: 2800, yakuman: 3600 }[kind]);
   const el = document.createElement('div');
   el.className = 'cutin ' + kind + (rose ? ' rose' : '') + (opt.cls ? ' ' + opt.cls : '');
   el.innerHTML = `<div class="band"></div><div class="streaks"></div><div class="face" style="background-image:url('${opt.img || rose || avatarURL(p.icon)}')"></div>` +
@@ -2458,7 +2461,7 @@ async function cutin(G, seat, kind, word, line, opt = {}) {
   st.animate([{ backgroundPositionX: '0px' }, { backgroundPositionX: '-900px' }], { duration: dur, easing: 'linear' });
   face.animate([{ transform: 'translateX(-130%) scale(1.1)', opacity: 0 }, { transform: 'translateX(0) scale(1)', opacity: 1, offset: .18 }, { transform: 'translateX(14px) scale(1.03)', opacity: 1, offset: .84 }, { transform: 'translateX(-130%)', opacity: 0 }], o);
   w.animate([{ transform: 'scale(3)', opacity: 0 }, { transform: 'scale(3)', opacity: 0, offset: .12 }, { transform: 'scale(1)', opacity: 1, offset: .24 }, { transform: 'scale(1.04)', opacity: 1, offset: .86 }, { transform: 'scale(1.3)', opacity: 0 }], o);
-  if (l) l.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 0, offset: .22 }, { opacity: 1, transform: 'none', offset: .32 }, { opacity: 1, offset: .86 }, { opacity: 0 }], o);
+  if (l) l.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 0, offset: .12 }, { opacity: 1, transform: 'none', offset: .2 }, { opacity: 1, offset: .9 }, { opacity: 0 }], o);
   if (kind === 'yakuman') { const fl = document.createElement('div'); fl.className = 'flashwhite'; $('#fx').appendChild(fl); setTimeout(() => fl.remove(), 900); }
   await sleep(dur * (kind === 'call' ? speed() : 1));
   el.remove();
@@ -2525,7 +2528,7 @@ const IO = {
         render();
         const v = sayLine(p, ev.call);
         const oo = okoOpt(p, ev.call);
-        if (oo.fx) oo.dur = 1900;
+        if (oo.fx) oo.dur = 2300;
         await cutin(G, ev.seat, 'call', name, oo.img ? v.text : '', oo); break;
       }
       case 'scores': render(); break;
@@ -2618,7 +2621,7 @@ const IO = {
       Snd.se(isYm ? 'yakuman' : 'win');
       const v = sayLine(p, lv);
       // カットイン＋セリフが終わるまで役は見せない
-      const oo = okoOpt(p, lv); if (oo.fx === 'ranger') oo.dur = 4200; else if (oo.fx) oo.dur = 3200;
+      const oo = okoOpt(p, lv); if (oo.fx === 'ranger') oo.dur = 4600; else if (oo.fx) oo.dur = 3600;
       await Promise.all([cutin(G, r.seat, isYm ? 'yakuman' : lv.endsWith('mangan') ? 'big' : 'win', word, v.text, oo), v.done]);
       await sleep(isYm ? 700 : 350);
       const hand = r.hand.slice().sort((a, b) => a - b);
@@ -2692,7 +2695,7 @@ const IO = {
     Snd.se('accuse');
     const va = sayLine(A, 'accuse');
     const ao = S.cutin ? okoOpt(A, 'accuse') : {};
-    if (ao.img) await Promise.all([cutin(G, accuser, 'win', '指摘！', va.text, Object.assign(ao, { dur: 1800 })), va.done]);
+    if (ao.img) await Promise.all([cutin(G, accuser, 'win', '指摘！', va.text, Object.assign(ao, { dur: 2300, cls: (ao.cls || '') + ' sw' })), va.done]);
     else {
       banner('指摘！', accuser, 70, '#ff4d6d');
       bubble(accuser, va.text, 2200);
@@ -2709,7 +2712,7 @@ const IO = {
     if (to.img) {
       // おこさまレンジャー：バレた→ホワイト／無実→ピンク（友情出演）
       const vt = sayLine(Tg, outcome === 'caught' ? 'caught' : 'innocent');
-      await Promise.all([cutin(G, target, outcome === 'caught' ? 'win' : 'riichi', outcome === 'caught' ? 'バレた！' : '無実！', vt.text, Object.assign(to, { dur: 2000 })), vt.done]);
+      await Promise.all([cutin(G, target, outcome === 'caught' ? 'win' : 'riichi', outcome === 'caught' ? 'バレた！' : '無実！', vt.text, Object.assign(to, { dur: 2500, cls: (to.cls || '') + ' sw' })), vt.done]);
     } else setTimeout(() => { const vt = sayLine(Tg, outcome === 'caught' ? 'caught' : 'innocent'); bubble(target, vt.text, 2400); }, 300);
     const ov = overlay(`<div style="text-align:center"><div class="banner" style="position:static;font-size:110px;text-shadow:0 6px 0 rgba(0,0,0,.5),0 0 40px ${col}">${big}</div>
       <div class="panel" style="margin-top:10px;font-size:20px;font-weight:700">${desc}<div style="margin-top:10px;font-size:24px">${payer.name} → ${recv.name}　<b style="color:#ffd166">${pen.toLocaleString()}点</b></div><div style="margin-top:8px;font-size:17px;color:#ff8fa3">${payer.name} はこの局アガリ放棄！（リーチ・鳴き・イカサマもできません）</div>${outcome === 'caught' && accuser === HUMAN ? `<div style="margin-top:6px;font-size:16px;color:#c77dff">イカサマポイント +1pt</div>` : ''}
