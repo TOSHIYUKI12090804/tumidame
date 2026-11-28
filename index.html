@@ -377,6 +377,20 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 .luckfx.t2 .lfw{font-size:78px;-webkit-text-stroke:3px #4a0f33;text-shadow:0 4px 0 rgba(0,0,0,.6),0 0 30px #ff4fb8,0 0 60px #ffd166}
 .luckfx .lfn{font-size:34px;font-weight:900;color:#fff;margin-top:4px}.luckfx .lfn span{font-size:24px;color:#ffe9a6}
 .luckfx .lfd{font-size:22px;font-weight:700;color:#d8eadf;margin-top:6px}
+.luckgrid .lfoot{font-size:11px;color:#9fb3aa;line-height:1.35}
+
+.lbprof{display:flex;align-items:center;justify-content:center;gap:16px;margin:4px 0 8px;padding:8px;border-radius:14px;background:rgba(0,0,0,.25)}
+.lbprof .av{width:56px;height:56px;border-radius:50%;background:center/cover;box-shadow:0 0 0 3px #d4af37}
+.lbrules .row{margin:4px 0}
+#lobbyPanel{max-height:700px;overflow-y:auto;padding-top:16px;padding-bottom:16px}
+#lobbyPanel h2{margin:0 0 6px}
+#lobbyPanel .online-code{font-size:44px;margin:2px 0 6px;letter-spacing:10px}
+#lobbyPanel .seatlist .st{padding:6px 4px}
+#lobbyPanel .seatlist .av{width:44px;height:44px}
+#lobbyPanel .lbprof{margin:0 0 6px;padding:6px}
+#lobbyPanel .lbprof .av{width:46px;height:46px}
+#lobbyPanel .lbrules .row{margin:2px 0}
+#lobbyPanel .lbrules .seg button{padding:5px 12px}
 </style>
 </head>
 <body>
@@ -421,7 +435,9 @@ function tileName(k) {
   return HONOR_JP[k - 27];
 }
 function toCounts(ids) { const c = new Array(34).fill(0); for (const id of ids) c[id >> 2]++; return c; }
-function doraOf(ind) {
+let DORA_SANMA = false;
+function doraOf(ind, sanma = DORA_SANMA) {
+  if (sanma && ind === 0) return 8; // 三麻：一萬の次は九萬
   if (ind < 27) return ind % 9 === 8 ? ind - 8 : ind + 1;
   if (ind < 31) return ind === 30 ? 27 : ind + 1;
   return ind === 33 ? 31 : ind + 1;
@@ -486,6 +502,13 @@ function shanten(c, melds) {
   return s;
 }
 // 13枚(相当)の手から待ちを求める
+// 自分の手牌・副露・抜き北で4枚とも使っている牌は待ちにならない（純空テンパイ不可）
+function realWaits(c, p) {
+  const used = c.slice();
+  for (const m of p.melds || []) for (const id of m.tiles) used[id >> 2]++;
+  for (const id of p.kitaIds || []) used[id >> 2]++;
+  return waitsOf(c, (p.melds || []).length).filter(k => used[k] < 4);
+}
 function waitsOf(c, melds) {
   const w = [];
   for (let k = 0; k < 34; k++) { if (c[k] >= 4) continue; c[k]++; if (shanten(c, melds) === -1) w.push(k); c[k]--; }
@@ -710,8 +733,8 @@ function evalWin(o) {
   }
   if (!cands.length) return null;
   // ドラ
-  const doraKinds = (o.dora || []).map(id => doraOf(id >> 2));
-  const uraKinds = o.riichi ? (o.ura || []).map(id => doraOf(id >> 2)) : [];
+  const doraKinds = (o.dora || []).map(id => doraOf(id >> 2, !!o.sanma));
+  const uraKinds = o.riichi ? (o.ura || []).map(id => doraOf(id >> 2, !!o.sanma)) : [];
   let dora = 0, ura = 0, aka = 0;
   for (const id of allIds) { const k = id >> 2; for (const d of doraKinds) if (d === k) dora++; for (const d of uraKinds) if (d === k) ura++; if (o.red && isRedId(id)) aka++; }
   const kita = o.kita || 0;
@@ -914,9 +937,9 @@ const LUCK_MAX = 10, LUCK_START = 0;
 const LUCK_TIER = ['ラッキー！', '超ラッキー！！', 'スペシャルラッキー！！！'];
 const LUCK = {
   junpu: { name: '順風満帆', cost: 4, icon: '🍀', desc: 'テンパイに近い、まとまった配牌が来る', tiers: ['2シャンテン以内', '1シャンテン以内', '1シャンテン以内＋有効牌が来やすい'] },
-  dora: { name: 'ドラ祭り', cost: 3, icon: '🎆', desc: '配牌にドラが集まり、ツモでもドラを引きやすい', tiers: ['ドラ2枚', 'ドラ3枚', 'ドラ4枚＋ツモでも引きやすい'] },
+  dora: { name: 'ドラ祭り', cost: 3, icon: '🎆', desc: '配牌にドラ（足りなければ赤ドラ）が集まる', tiers: ['ドラ2枚', 'ドラ3枚', 'ドラ4枚＋ツモでも引きやすい'], foot: '赤ドラも含みます。王牌や他の人の手に入っている分は来ないので、少なくなることがあります' },
   ippatsu: { name: '一発の女神', cost: 4, icon: '⚡', desc: 'リーチした直後のツモで当たり牌を引きやすい。リーチできないと効果なし', tiers: ['一発ツモ70%', '一発ツモ85%', '一発ツモ95%'] },
-  yakuman: { name: '役満の予感', cost: 8, icon: '👑', desc: 'いろいろな役満の形がかなり出来上がった配牌が来る（どの役満かはお楽しみ）', tiers: ['あと3枚', 'あと2枚', 'あと1枚＋必要な牌を引きやすい'] },
+  yakuman: { name: '役満の予感', cost: 8, icon: '👑', desc: 'いろいろな役満の形がかなり出来上がった配牌が来る（どの役満かはお楽しみ）', tiers: ['テンパイまであと3枚', 'テンパイまであと2枚', 'テンパイまであと1枚＋必要な牌を引きやすい'] },
   kaze: { name: '風神の加護', cost: 2, icon: '🌪', desc: '自風・場風（役になる風牌）が集まる', tiers: ['役風の対子', '役風の刻子', '役風の刻子＋もう1種の対子'] },
   isshoku: { name: '一色の調べ', cost: 4, icon: '🎨', desc: '1種類の色（萬子・筒子・索子のどれか）に偏った配牌とツモ', tiers: ['同じ色が9枚', '同じ色が10枚', '同じ色が11枚＋ツモも偏る'] },
   yaochu: { name: '端っこ招き', cost: 2, icon: '🀄', desc: '1・9・字牌が集まる（国士無双や混老頭・チャンタ向き）', tiers: ['8枚', '9枚', '11枚＋ツモも偏る'] },
@@ -955,7 +978,7 @@ class Game {
     this.P = players.map(pl => ({ ...pl, cheatPts: S.mode === 'cheat' ? (S.cheatStart ?? 2) : 0, luckPts: S.luck ? LUCK_START : 0, charge: 0, score: S.players === 3 ? 35000 : 25000, hand: [], melds: [], river: [], discardKinds: new Set(), trust: [1, 1, 1, 1] }));
     // 見るからに怪しいキャラは最初から疑われやすい
     this.P.forEach((p, j) => { if (p.char && p.char.suspicious) this.P.forEach((q, i) => { if (i !== j) q.trust[j] = 1.6; }); });
-    this.N = this.P.length; this.sanma = this.N === 3;
+    this.N = this.P.length; this.sanma = this.N === 3; DORA_SANMA = this.sanma;
     this.roundWind = 0; this.kyoku = 0; this.dealer = 0; this.honba = 0; this.kyotaku = 0;
     this.handNo = 0; this.over = false; this.startDealer = 0;
     this.log = [];
@@ -1311,13 +1334,15 @@ class Game {
       if (q.isHuman) continue;
       if (o.pon && AI.wantPon(this, q, k)) return this.makeCall(s, from, id, 'pon');
     }
-    // 人間
-    for (const { s, o } of opts) {
-      const q = this.P[s];
-      if (!q.isHuman) continue;
-      if (!o.pon && !o.kan && !o.chi.length) continue;
-      const ans = await this.io.humanCall(this, s, o, id);
-      if (ans && ans.type !== 'pass') return this.makeCall(s, from, id, ans.type, ans.pattern);
+    // 人間：鳴ける人全員に聞いてから、ポン・カン ＞ チー の順で決める
+    const asks = opts.filter(({ s, o }) => this.P[s].isHuman && (o.pon || o.kan || o.chi.length));
+    if (asks.length) {
+      const answers = await Promise.all(asks.map(({ s, o }) => this.io.humanCall(this, s, o, id).then(a => ({ s, o, a }))));
+      const ok = answers.filter(x => x.a && x.a.type !== 'pass');
+      const pk = ok.find(x => x.a.type === 'pon' || x.a.type === 'kan');
+      if (pk) return this.makeCall(pk.s, from, id, pk.a.type, pk.a.pattern);
+      const ch = ok.find(x => x.a.type === 'chi');
+      if (ch) return this.makeCall(ch.s, from, id, 'chi', ch.a.pattern);
     }
     // チー (CPU)
     for (const { s, o } of opts) {
@@ -1391,7 +1416,7 @@ class Game {
 
   exhaustive() {
     const tenpai = [];
-    this.P.forEach((p, i) => { if (!p.dead && shanten(toCounts(p.hand), p.melds.length) === 0) tenpai.push(i); });
+    this.P.forEach((p, i) => { if (!p.dead && realWaits(toCounts(p.hand), p).filter(k => this.kindExists(k)).length) tenpai.push(i); });
     const deltas = new Array(this.N).fill(0);
     const N = this.N, pool = this.sanma ? 2000 : 3000;
     if (tenpai.length && tenpai.length < N) {
@@ -1460,7 +1485,10 @@ class Game {
       case 'dora': {
         const dk = this.doraInd.map(id => doraOf(id >> 2));
         const n = [2, 3, 4][t];
-        const got = this.takeWhere(pool, Math.min(n, room), k => dk.includes(k));
+        // 表ドラ優先、足りなければ赤ドラで補う（王牌や他の人に取られている分は来ない）
+        let got = this.takeWhere(pool, Math.min(n, room), k => dk.includes(k));
+        if (got.length < n && this.S.red) got = got.concat(this.takeWhere(pool, Math.min(n, room) - got.length, (k, id) => isRedId(id) && !dk.includes(k)));
+        L.note = `ドラ${got.length}枚`;
         if (t === 2) L.bias = { q: 0.3, kinds: dk };
         return got;
       }
@@ -1712,6 +1740,7 @@ class Game {
     return p.lastOff === undefined || p.lastOff === null || (this.discardNo || 0) - p.lastOff >= this.N;
   }
   async freeAccuse(accuser, target) {
+    if (this.S.mode !== 'cheat') return;
     if (target === accuser || !this.P[target] || !this.P[accuser]) return;
     const pen = this.S.penalty;
     this.pay(accuser, target, pen);
@@ -1846,7 +1875,7 @@ class Game {
   }
 }
 
-if (typeof module !== 'undefined' && typeof window === 'undefined') module.exports = { Game, AI, CHARS, TECH, evalWin, shanten, waitsOf, toCounts, tileName, decompose, doraOf, kindOf, isRedId, WIND_JP, isYaochu, LUCK, LUCK_ORDER };
+if (typeof module !== 'undefined' && typeof window === 'undefined') module.exports = { Game, AI, CHARS, TECH, evalWin, shanten, waitsOf, toCounts, tileName, decompose, doraOf, kindOf, isRedId, WIND_JP, isYaochu, LUCK, LUCK_ORDER, realWaits };
 
 // ===================== 牌・アバターの絵 =====================
 const MINCHO = "'Hiragino Mincho ProN','Yu Mincho','YuMincho','Noto Serif CJK JP','Noto Serif JP',serif";
@@ -2037,7 +2066,7 @@ const Snd = {
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   },
-  setBgm(on) { this.bgmOn = on; if (this.bgmG) this.bgmG.gain.value = on ? 0.55 : 0; if (on) this.bgmStart(); else this.bgmStop(); },
+  setBgm(on) { this.bgmOn = on; if (this.bgmG) { const g = this.bgmG.gain; g.cancelScheduledValues(0); g.setValueAtTime(on ? 0.55 : 0, this.ctx.currentTime); } if (on) this.bgmStart(); else this.bgmStop(); },
   setSe(on) { this.seOn = on; if (this.seG) this.seG.gain.value = on ? 0.8 : 0; },
   noise(t, dur, f, q, g, type = 'bandpass', dest) {
     const c = this.ctx; const s = c.createBufferSource(); s.buffer = this.noiseBuf;
@@ -2147,7 +2176,7 @@ const Snd = {
     // 戦隊ものっぽいファンファーレ（BGMを一時的に下げる）＋6連爆発
     if (!this.ctx) return;
     const c = this.ctx, t0 = c.currentTime + 0.05;
-    if (this.bgmG && this.bgmOn) { const g = this.bgmG.gain; g.cancelScheduledValues(t0); g.setValueAtTime(g.value, t0); g.linearRampToValueAtTime(0.08, t0 + 0.2); g.setValueAtTime(0.08, t0 + 4.2); g.linearRampToValueAtTime(0.55, t0 + 5); }
+    if (this.bgmG && this.bgmOn) { const g = this.bgmG.gain; g.cancelScheduledValues(t0); g.setValueAtTime(g.value, t0); g.linearRampToValueAtTime(0.08, t0 + 0.2); g.setValueAtTime(0.08, t0 + 4.2); g.linearRampToValueAtTime(0.55, t0 + 5); setTimeout(() => { if (!this.bgmOn) this.setBgm(false); }, 5100); }
     if (!this.seOn) return;
     const brass = (t, f, d, v = 0.13) => {
       [1, 1.004, 0.996].forEach(m => {
@@ -2508,8 +2537,8 @@ function analyzeHand(p) {
     c[k]--;
     const s = shanten(c, nm);
     let w = [];
-    if (s === 0) w = waitsOf(c, nm).filter(t => G.kindExists(t)).map(t => ({ k: t, n: Math.max(0, 4 - vis[t] + (t === k ? 1 : 0)) }));
-    out[k] = { s, w };
+    if (s === 0) w = realWaits(c, p).filter(t => G.kindExists(t)).map(t => ({ k: t, n: Math.max(0, 4 - vis[t] + (t === k ? 1 : 0)) }));
+    out[k] = { s: (s === 0 && !w.length) ? 1 : s, w };
     c[k]++;
   }
   return out;
@@ -2548,9 +2577,11 @@ function renderHand() {
     const c = toCounts(p.hand);
     if (p.hand.length % 3 === 1) {
       const s = shanten(c, p.melds.length);
-      if (s === 0) {
+      const w0 = s === 0 ? realWaits(c, p).filter(t => G.kindExists(t)) : [];
+      if (s === 0 && !w0.length) info = `<div class="pill">形はテンパイですが、待ち牌を自分で4枚使っているので<b>ノーテン</b>です</div>`;
+      else if (s === 0) {
         const vis = AI.visible(G, HUMAN);
-        const w = waitsOf(c, p.melds.length).filter(t => G.kindExists(t)).map(t => ({ k: t, n: Math.max(0, 4 - vis[t]) }));
+        const w = realWaits(c, p).filter(t => G.kindExists(t)).map(t => ({ k: t, n: Math.max(0, 4 - vis[t]) }));
         const total = w.reduce((a, x) => a + x.n, 0);
         const yk = p.riichi || waitYaku(p, w);
         const fur = w.some(x => p.discardKinds.has(x.k));
@@ -3197,7 +3228,7 @@ function luckUI(G) {
     U.turnSeat = -1;
     const ov = overlay(`<div class="panel luckpanel"><h2>運気を使う？ <span class="lp">🍀 運気 ${pts}pt（最大${LUCK_MAX}pt）</span></h2>
       <div class="helptext" style="margin:0 auto 10px;text-align:center">選んだ運気はこの局だけ効きます。<b>他の人には分かりません</b>。発動時に<b style="color:#7ee0a1">ラッキー</b>・<b style="color:#ffd166">超ラッキー</b>・<b style="color:#ff8fd8">スペシャルラッキー</b>のどれかが出て、上ほど効果が強くなります。<br>運気を使った局は運気ポイントが貯まりません。</div>
-      <div class="luckgrid">${LUCK_ORDER.map(t => { const L = LUCK[t], ok = L.cost <= pts; return `<button class="lk ${ok ? '' : 'off'}" data-t="${t}" ${ok ? '' : 'disabled'}><div class="lt"><span class="li">${L.icon}</span><b>${L.name}</b><span class="lc">${L.cost}pt</span></div><div class="ld">${L.desc}</div><div class="lti">${L.tiers.map((x, i) => `<span class="t${i}">${['ラ', '超', 'SP'][i]}</span>${x}`).join('<br>')}</div></button>`; }).join('')}</div>
+      <div class="luckgrid">${LUCK_ORDER.map(t => { const L = LUCK[t], ok = L.cost <= pts; return `<button class="lk ${ok ? '' : 'off'}" data-t="${t}" ${ok ? '' : 'disabled'}><div class="lt"><span class="li">${L.icon}</span><b>${L.name}</b><span class="lc">${L.cost}pt</span></div><div class="ld">${L.desc}</div><div class="lti">${L.tiers.map((x, i) => `<span class="t${i}">${['ラ', '超', 'SP'][i]}</span>${x}`).join('<br>')}</div>${L.foot ? `<div class="lfoot">${L.foot}</div>` : ''}</button>`; }).join('')}</div>
       <div style="text-align:center;margin-top:12px"><button class="btn gray" id="lkNo">使わない</button></div></div>`);
     ov.querySelectorAll('.lk:not(.off)').forEach(b => b.onclick = () => { Snd.se('select'); ov.remove(); resolve(b.dataset.t); });
     ov.querySelector('#lkNo').onclick = () => { ov.remove(); resolve(null); };
@@ -3367,7 +3398,8 @@ function fullscreenHelp() {
 }
 
 function showTitle() {
-  if (U.G) { U.G.io = null; }
+  // 終わらせた対局は、以後の画面処理を全部「止まったまま」にする（例外を出さない）
+  if (U.G) { U.G.over = true; U.G.io = new Proxy({}, { get: () => () => new Promise(() => { }) }); }
   U.G = null; U.turn = null; U.token = null;
   if (U.online) { try { Net.emit({ t: 'bye' }); } catch (e) { } Net.leave(); U.online = null; }
   document.querySelectorAll('.overlay').forEach(o => o.remove());
@@ -3595,13 +3627,13 @@ const Host = {
       }
       case 'freeAcc': {
         const seat = this.seatPeer.indexOf(peer);
-        if (seat > 0 && this.game && Number.isInteger(d.target) && d.target >= 0 && d.target < this.game.N && d.target !== seat) this.game.queueAction({ type: 'free', accuser: seat, target: d.target });
+        if (seat > 0 && this.game && this.game.S.mode === 'cheat' && Number.isInteger(d.target) && d.target >= 0 && d.target < this.game.N && d.target !== seat) this.game.queueAction({ type: 'free', accuser: seat, target: d.target });
         break;
       }
       case 'offCheat': {
         const seat = this.seatPeer.indexOf(peer);
         const a = d.act || {};
-        if (seat > 0 && this.game) this.game.queueAction({ type: 'off', seat, act: { tech: String(a.tech), handId: Number(a.handId), fake: String(a.fake || '') } });
+        if (seat > 0 && this.game && this.game.S.mode === 'cheat' && TECH[a.tech]) this.game.queueAction({ type: 'off', seat, act: { tech: String(a.tech), handId: Number(a.handId), fake: String(a.fake || '') } });
         break;
       }
       case 'accHit': { const w = this.accWins[d.id]; const seat = this.seatPeer.indexOf(peer); if (w && seat > 0 && w.humans.includes(seat)) w.finish(seat); break; }
@@ -3697,8 +3729,10 @@ function checkTurnAns(G, seat, o, v) {
       if (v.riichi && !o.riichi.includes(v.id >> 2)) v.riichi = false;
       return { type: 'discard', id: v.id, riichi: !!v.riichi };
     case 'cheat':
-      if (G.S.mode !== 'cheat' || !TECH[v.tech]) return aiTurn(G, seat, o);
+      if (G.S.mode !== 'cheat' || !TECH[v.tech] || TECH[v.tech].off || p.riichi || p.dead || p.cheatedTurn) return aiTurn(G, seat, o);
       if (v.tech !== 'bluff' && !p.hand.includes(v.handId)) return aiTurn(G, seat, o);
+      if (v.tech === 'bluff' && !['elevator', 'bukko', 'river'].includes(v.fake)) v.fake = 'elevator';
+      if (v.tech === 'bukko' && !(Number.isInteger(v.kind) && v.kind >= 0 && v.kind < 34)) return aiTurn(G, seat, o);
       if (v.tech === 'river') { v.seat = (v.seat + seat) % G.N; const rv = G.P[v.seat] && G.P[v.seat].river[v.riverIdx]; if (!rv || rv.called) return aiTurn(G, seat, o); }
       if (v.tech === 'elevator' && !(v.wallIdx >= 0 && v.wallIdx < Math.min(3, G.live.length))) return aiTurn(G, seat, o);
       return v;
@@ -3899,21 +3933,48 @@ const Lobby = {
     }
     return h + '</div>';
   },
+  // 部屋の中でも名前・キャラを変えられる（入力中に消えないよう別枠で描画）
+  renderProf(box) {
+    const key = myOnlineName() + '|' + S.myIcon;
+    if (box.dataset.key === key && box.innerHTML) return;
+    box.dataset.key = key;
+    box.innerHTML = `<div class="lbprof"><div class="av" style="background-image:url('${avatarURL(S.myIcon)}')"></div>
+      <div><div style="font-size:12px;color:#9fb3aa">表示名（10文字まで）</div><input class="inp" id="lbName2" style="text-transform:none;letter-spacing:1px;width:220px" maxlength="10" value="${esc(myOnlineName())}"></div>
+      <button class="btn blue small" id="lbChar2">キャラを変える</button></div>`;
+    const inp = box.querySelector('#lbName2');
+    const save = () => { const n = cleanName(inp.value); if (!n) return; try { localStorage.setItem('tsumikomi_name', n); } catch (e) { } this.profChanged(); };
+    inp.onchange = save; inp.onblur = save; inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); };
+    box.querySelector('#lbChar2').onclick = async () => { const id = await pickChar(); if (id) { S.myIcon = id; saveS(); this.profChanged(); } };
+  },
+  profChanged() {
+    if (Net.role === 'host' && Host.seats[0]) { Host.seats[0].name = myOnlineName(); Host.seats[0].icon = S.myIcon; Host.bLobby(); }
+    else if (Net.role === 'guest') { Net.emit({ t: 'hello', n: myOnlineName(), i: S.myIcon }); }
+    const box = this.ov && this.ov.querySelector('#lbProf'); if (box) { box.dataset.key = ''; this.renderProf(box); }
+  },
   render() {
     if (!this.ov || !this.ov.isConnected) return;
     const P = this.ov.querySelector('#lobbyPanel');
+    if (Net.role === 'host' || Net.role === 'guest') {
+      if (P.dataset.role !== Net.role) {
+        P.dataset.role = Net.role;
+        P.innerHTML = `<h2>友達と遊ぶ（${Net.role === 'host' ? '部屋のホスト' : '参加'}）</h2><div id="lbProf"></div><div id="lbBody"></div>`;
+      }
+      this.renderProf(P.querySelector('#lbProf'));
+    } else delete P.dataset.role;
     if (Net.role === 'host') {
       const yn = [[true, 'あり'], [false, 'なし']];
-      P.innerHTML = `<h2>友達と遊ぶ（部屋のホスト）</h2>
+      const B = P.querySelector('#lbBody');
+      B.innerHTML = `
         <div style="text-align:center;color:#cfe0d8">このページのURLと、下の<b style="color:#ffd166">部屋コード</b>を友達に送ってください</div>
         <div class="online-code">${esc(Net.code)}</div>
         ${this.seatsHTML(Host.seats.map(s => ({ p: s.peer, n: s.name, i: s.icon })), S.players, null)}
-        <div style="display:grid;grid-template-columns:1fr 1fr;column-gap:10px">${segRow('人数', 'players', [[4, '4人麻雀'], [3, '3人麻雀']])}${segRow('モード', 'mode', [['normal', '通常'], ['cheat', 'イカサマ']])}${segRow('長さ', 'length', [['east', '東風戦'], ['south', '半荘戦']])}${segRow('鳴き', 'naki', yn)}${segRow('赤ドラ', 'red', yn)}${segRow('喰いタン', 'kuitan', yn)}</div>
+        <div class="lbrules"><div style="display:grid;grid-template-columns:1fr 1fr;column-gap:10px">${segRow('人数', 'players', [[4, '4人麻雀'], [3, '3人麻雀']])}${segRow('モード', 'mode', [['normal', '通常'], ['cheat', 'イカサマ']])}${segRow('長さ', 'length', [['east', '東風戦'], ['south', '半荘戦']])}${segRow('鳴き', 'naki', yn)}${segRow('赤ドラ', 'red', yn)}${segRow('喰いタン', 'kuitan', yn)}${segRow('運気ポイント', 'luck', yn)}</div>
+        ${S.mode === 'cheat' ? `<div style="display:grid;grid-template-columns:1fr 1fr;column-gap:10px">${segRow('最初のイカサマpt', 'cheatStart', [[0, '0pt'], [2, '2pt'], [4, '4pt']])}${segRow('罰符', 'penalty', [[2000, '2000'], [4000, '4000'], [8000, '8000']])}${segRow('指摘の受付', 'window', [[2, '2秒'], [3, '3秒'], [5, '5秒']])}</div>` : ''}</div>
         <div style="display:flex;gap:14px;justify-content:center;margin-top:14px"><button class="btn gold" id="lbStart">${Host.seats.length < S.players ? `対局開始（空き${S.players - Host.seats.length}席はCPU）` : '対局開始'}</button><button class="btn gray small" id="lbLeave">部屋を閉じる</button></div>`;
-      bindSeg(P);
-      P.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => Host.bLobby()));
-      P.querySelector('#lbStart').onclick = () => { Snd.init(); Host.start(); };
-      P.querySelector('#lbLeave').onclick = () => { Net.leave(); U.online = null; this.close(); };
+      bindSeg(B);
+      B.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => Host.bLobby()));
+      B.querySelector('#lbStart').onclick = () => { Snd.init(); Host.start(); };
+      B.querySelector('#lbLeave').onclick = () => { Net.leave(); U.online = null; this.close(); };
       return;
     }
     if (Net.role === 'guest') {
@@ -3926,11 +3987,12 @@ const Lobby = {
         const r = L.rules || {};
         const inSeat = (L.seats || []).some(s => s.p === Net.myPeer);
         body = `<div class="online-code">${esc(Net.code)}</div>${this.seatsHTML(L.seats || [], r.players === 3 ? 3 : 4, Net.myPeer)}
-          <div style="text-align:center;color:#cfe0d8">${r.players === 3 ? '3人麻雀' : '4人麻雀'}・${r.mode === 'cheat' ? 'イカサマ麻雀' : '通常麻雀'}・${r.length === 'south' ? '半荘戦' : '東風戦'}・鳴き${r.naki ? 'あり' : 'なし'}・赤ドラ${r.red ? 'あり' : 'なし'}・運気${r.luck === false ? 'なし' : 'あり'}</div>
+          <div style="text-align:center;color:#cfe0d8">${r.players === 3 ? '3人麻雀' : '4人麻雀'}・${r.mode === 'cheat' ? 'イカサマ麻雀' : '通常麻雀'}・${r.length === 'south' ? '半荘戦' : '東風戦'}・鳴き${r.naki ? 'あり' : 'なし'}・赤ドラ${r.red ? 'あり' : 'なし'}・運気${r.luck === false ? 'なし' : 'あり'}${r.mode === 'cheat' ? `<br>最初のイカサマ${r.cheatStart ?? 2}pt・罰符${r.penalty ?? 4000}点・指摘の受付${r.window ?? 3}秒` : ''}</div>
           <div style="text-align:center;font-size:18px;margin-top:14px;color:#ffd166">${L.playing ? '対局中です。終わるまでお待ちください' : inSeat ? 'ホストが対局を始めるのを待っています…' : '席に入っています…'}</div>`;
       }
-      P.innerHTML = `<h2>友達と遊ぶ（参加）</h2>${body}<div style="text-align:center;margin-top:16px"><button class="btn gray small" id="lbLeave">部屋を出る</button></div>`;
-      P.querySelector('#lbLeave').onclick = () => { Net.emit({ t: 'bye' }); Net.leave(); U.online = null; this.close(); };
+      const B = P.querySelector('#lbBody');
+      B.innerHTML = `${body}<div style="text-align:center;margin-top:16px"><button class="btn gray small" id="lbLeave">部屋を出る</button></div>`;
+      B.querySelector('#lbLeave').onclick = () => { Net.emit({ t: 'bye' }); Net.leave(); U.online = null; this.close(); };
       return;
     }
     // 入口
@@ -3963,6 +4025,14 @@ const Lobby = {
     };
   },
 };
+function pickChar() {
+  return new Promise(resolve => {
+    const all = PLAYER_CHARS.concat(CHARS);
+    const ov = overlay(`<div class="panel" style="width:860px"><h2>キャラを選ぶ</h2><div class="charsel">${all.map(c => `<div class="c ${S.myIcon === c.id ? 'on' : ''}" data-id="${c.id}"><div class="av" style="background-image:url('${avatarURL(c.id)}')"></div><b>${c.name}</b><small>${c.title}</small></div>`).join('')}</div><div style="text-align:center;margin-top:14px"><button class="btn gray small" id="pcNo">やめる</button></div></div>`);
+    ov.querySelectorAll('.charsel .c').forEach(c => c.onclick = () => { Snd.init(); VoiceBank.load(); sayLine({ icon: c.dataset.id }, 'ron_mangan'); ov.remove(); resolve(c.dataset.id); });
+    ov.querySelector('#pcNo').onclick = () => { ov.remove(); resolve(null); };
+  });
+}
 async function openOnline() {
   const wait = overlay('<div class="panel" style="text-align:center;font-size:18px">接続しています…</div>');
   const room = await Net.getRoom();
