@@ -395,6 +395,28 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 #lobbyPanel .codebox{display:flex;align-items:center;justify-content:center;gap:18px;margin:0 0 6px}
 #lobbyPanel .codebox .online-code{margin:0;cursor:pointer;user-select:all;-webkit-user-select:all}
 #lobbyPanel .codebox .btn.small{padding:6px 14px;font-size:15px}
+
+/* ---- 選択画面を大きく（はみ出す分はスクロール） ---- */
+.overlay{align-items:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 0}
+.overlay>.panel{margin:auto;max-height:none}
+.kindgrid{gap:9px}
+.kindgrid .t.s{--w:56px;--h:76px;--d:7px}
+.kindgrid .k .cnt{font-size:15px;right:-6px;top:-8px;padding:1px 7px}
+#stsel .t.m{--w:52px;--h:70px}
+.cheatpanel h2{font-size:30px}
+.cheatpanel .row .btn{font-size:20px;padding:12px 26px}
+.cheatpanel .lbl{font-size:18px;min-width:130px}
+.luckpanel{width:1180px;max-height:none;overflow:visible}
+.luckpanel h2{font-size:32px}.luckpanel h2 .lp{font-size:24px}
+.luckpanel .helptext{font-size:17px}
+.luckgrid{grid-template-columns:repeat(2,1fr);gap:14px}
+.luckgrid .lk{padding:16px 18px;gap:8px}
+.luckgrid .lt{font-size:26px}.luckgrid .li{font-size:32px}.luckgrid .lc{font-size:22px}
+.luckgrid .ld{font-size:18px;min-height:0}
+.luckgrid .lti{font-size:16px;line-height:1.7}
+.luckgrid .lti span{font-size:14px;min-width:34px;padding:1px 5px}
+.luckgrid .lfoot{font-size:14px}
+.luckpanel #lkNo{font-size:22px;padding:12px 36px}
 </style>
 </head>
 <body>
@@ -3060,9 +3082,9 @@ function onHandClick(e) {
 // ---------- イカサマUI ----------
 function cheatMenu() {
   const G = U.G, p = G.P[HUMAN];
-  const ov = overlay(`<div class="panel" style="width:720px"><h2>イカサマ　<span style="font-size:16px;color:#c77dff">残り ${p.cheatPts}pt（最大${CHEAT_MAX}pt）</span></h2>
-   ${Object.entries(TECH).filter(([k, t]) => !t.off).map(([k, t]) => `<div class="row" style="justify-content:space-between;background:#0b1210;padding:10px 14px;border-radius:14px"><div><b style="font-size:19px">${t.name}</b>　<span style="color:#c77dff">${t.cost}pt</span><div style="font-size:13px;color:#9fb3aa">${t.desc}　バレやすさ：${'★'.repeat(Math.round(t.vis * 5))}</div></div><button class="btn purple small" data-v="${k}" ${p.cheatPts < t.cost ? 'disabled' : ''}>使う</button></div>`).join('')}
-   <div style="font-size:13px;color:#9fb3aa;margin-top:8px">1ターンに使えるのは1回だけ。ポイントは、イカサマせずに${CHARGE_TURNS}回打牌する／ロンで放銃する／指摘を当てる、で1ptずつ溜まります。<br>使うと怪しい動きが他の人に見えます。指摘されたら罰符 ${S.penalty}点を払い、<b style="color:#ff8fa3">その局はアガリ放棄</b>。ブラフを指摘させれば、逆に相手が罰符を払ってアガリ放棄になります。</div>
+  const ov = overlay(`<div class="panel cheatpanel" style="width:960px"><h2>イカサマ　<span style="font-size:20px;color:#c77dff">残り ${p.cheatPts}pt（最大${CHEAT_MAX}pt）</span></h2>
+   ${Object.entries(TECH).filter(([k, t]) => !t.off).map(([k, t]) => `<div class="row" style="justify-content:space-between;background:#0b1210;padding:14px 18px;border-radius:14px"><div><b style="font-size:26px">${t.name}</b>　<span style="color:#c77dff">${t.cost}pt</span><div style="font-size:17px;color:#9fb3aa">${t.desc}　バレやすさ：${'★'.repeat(Math.round(t.vis * 5))}</div></div><button class="btn purple" data-v="${k}" ${p.cheatPts < t.cost ? 'disabled' : ''}>使う</button></div>`).join('')}
+   <div style="font-size:17px;color:#9fb3aa;margin-top:8px">1ターンに使えるのは1回だけ。ポイントは、イカサマせずに${CHARGE_TURNS}回打牌する／ロンで放銃する／指摘を当てる、で1ptずつ溜まります。<br>使うと怪しい動きが他の人に見えます。指摘されたら罰符 ${S.penalty}点を払い、<b style="color:#ff8fa3">その局はアガリ放棄</b>。ブラフを指摘させれば、逆に相手が罰符を払ってアガリ放棄になります。</div>
    <div style="text-align:center;margin-top:12px"><button class="btn gray small" data-v="cancel">やめる</button></div></div>`);
   waitClick(ov, 'button').then(v => {
     ov.remove();
@@ -3109,8 +3131,8 @@ function bukkoUI() {
 }
 function riverUI() {
   const G = U.G;
-  const ov = overlay(`<div class="panel" style="min-width:640px"><h2>河拾い</h2><div>拾う牌を選ぶ（自分の河からも拾えます）</div>
-   ${G.P.map((p, s) => `<div class="row"><span class="lbl">${p.name}</span><div style="display:flex;gap:3px;flex-wrap:wrap;max-width:560px">${p.river.map((r, i) => r.called ? '' : `<div data-v="${s}:${i}" style="cursor:pointer">${T(r.id, 'xs')}</div>`).join('')}</div></div>`).join('')}
+  const ov = overlay(`<div class="panel cheatpanel" style="min-width:900px"><h2>河拾い</h2><div>拾う牌を選ぶ（自分の河からも拾えます）</div>
+   ${G.P.map((p, s) => `<div class="row"><span class="lbl">${p.name}</span><div style="display:flex;gap:4px;flex-wrap:wrap;max-width:860px">${p.river.map((r, i) => r.called ? '' : `<div data-v="${s}:${i}" style="cursor:pointer">${T(r.id, 's')}</div>`).join('')}</div></div>`).join('')}
    <div style="text-align:center;margin-top:12px"><button class="btn gray small" data-v="cancel">やめる</button></div></div>`);
   waitClick(ov, '[data-v]').then(v => {
     ov.remove(); if (v === 'cancel') return;
@@ -3120,7 +3142,7 @@ function riverUI() {
 }
 function bluffPick() {
   const ov = overlay(`<div class="panel" style="text-align:center"><h2>ブラフ</h2><div>どの技のフリをする？（本当は何もしない）</div>
-   <div style="display:flex;gap:12px;justify-content:center;margin:16px 0">${['elevator', 'bukko', 'river', 'shift'].map(k => `<button class="btn purple small" data-v="${k}">${TECH[k].name}のフリ</button>`).join('')}</div>
+   <div style="display:flex;gap:12px;justify-content:center;margin:16px 0">${['elevator', 'bukko', 'river', 'shift'].map(k => `<button class="btn purple" data-v="${k}">${TECH[k].name}のフリ</button>`).join('')}</div>
    <button class="btn gray small" data-v="cancel">やめる</button></div>`);
   waitClick(ov, 'button').then(v => { ov.remove(); if (v === 'cancel') return; U.turn.resolve({ type: 'cheat', tech: 'bluff', fake: v }); });
 }
@@ -3191,10 +3213,10 @@ function onCheatButton() {
   const ld = G.lastDiscard;
   const ldOk = ld && ld.seat !== HUMAN && G.P[ld.seat] && G.P[ld.seat].river.length && !G.P[ld.seat].river[G.P[ld.seat].river.length - 1].called;
   const ldTile = ldOk ? G.P[ld.seat].river[G.P[ld.seat].river.length - 1].id : null;
-  const opt = (k, extra, ok) => `<div class="row" style="justify-content:space-between;background:#0b1210;padding:10px 14px;border-radius:14px"><div><b style="font-size:19px">${TECH[k].name}</b>　<span style="color:#c77dff">${TECH[k].cost}pt</span>${extra || ''}<div style="font-size:13px;color:#9fb3aa">${k === 'river' ? '直前の捨て牌を、ポンやチーされる前に手牌とすり替える' : TECH[k].desc}　バレやすさ：${'★'.repeat(Math.round(TECH[k].vis * 5))}</div></div><button class="btn purple small" data-v="${k}" ${p.cheatPts < TECH[k].cost || !ok ? 'disabled' : ''}>使う</button></div>`;
-  const ov = overlay(`<div class="panel" style="width:720px"><h2>手番外のイカサマ　<span style="font-size:16px;color:#c77dff">残り ${p.cheatPts}pt</span></h2>
-    ${opt('river', ldOk ? '　' + T(ldTile, 'xs') : '', ldOk)}${opt('shift', '', G.live.length >= 2)}${opt('bluff', '', true)}
-    <div style="font-size:13px;color:#9fb3aa;margin-top:8px">手番外のイカサマは1巡に1回まで。次の区切り（誰かが牌を切った直後など）で実行されます。</div>
+  const opt = (k, extra, ok) => `<div class="row" style="justify-content:space-between;background:#0b1210;padding:14px 18px;border-radius:14px"><div><b style="font-size:26px">${TECH[k].name}</b>　<span style="color:#c77dff">${TECH[k].cost}pt</span>${extra || ''}<div style="font-size:17px;color:#9fb3aa">${k === 'river' ? '直前の捨て牌を、ポンやチーされる前に手牌とすり替える' : TECH[k].desc}　バレやすさ：${'★'.repeat(Math.round(TECH[k].vis * 5))}</div></div><button class="btn purple" data-v="${k}" ${p.cheatPts < TECH[k].cost || !ok ? 'disabled' : ''}>使う</button></div>`;
+  const ov = overlay(`<div class="panel cheatpanel" style="width:960px"><h2>手番外のイカサマ　<span style="font-size:20px;color:#c77dff">残り ${p.cheatPts}pt</span></h2>
+    ${opt('river', ldOk ? '　' + T(ldTile, 'm') : '', ldOk)}${opt('shift', '', G.live.length >= 2)}${opt('bluff', '', true)}
+    <div style="font-size:17px;color:#9fb3aa;margin-top:8px">手番外のイカサマは1巡に1回まで。次の区切り（誰かが牌を切った直後など）で実行されます。</div>
     <div style="text-align:center;margin-top:12px"><button class="btn gray small" data-v="cancel">やめる</button></div></div>`);
   // 待っている間に捨て牌が変わったら表示を更新
   const iv = setInterval(() => {
@@ -3254,7 +3276,7 @@ function stackUI(G) {
   return new Promise(resolve => {
     U.turnSeat = -1;
     const sel = [];
-    const ov = overlay(`<div class="panel" style="text-align:center;width:820px"><h2>積み込みタイム</h2>
+    const ov = overlay(`<div class="panel" style="text-align:center;width:1000px"><h2>積み込みタイム</h2>
      <div style="font-size:18px;font-weight:900;color:#c77dff;margin-bottom:6px">持ちポイント ${G.P[HUMAN].cheatPts}pt　<span style="font-size:14px;color:#cfe0d8">（積み込み：${STACK_COST}pt／積むフリ：${STACK_BLUFF_COST}pt／<b style="color:#ff8fa3">タイミングを失敗してもポイントは戻りません</b>）</span></div><div class="helptext" style="margin:0 auto">配牌に仕込みたい牌を<b>最大${STACK_MAX}枚</b>選んでください。たくさん積むほどタイミングが難しく、バレやすくなります。<br>他の人と同じ牌を狙うと<b>取り合い</b>になり、タイミングが良かった方が勝ちます。</div>
      <div class="kindgrid" style="margin:14px 0">${[...Array(34).keys()].map(k => `<div class="k ${G.kindExists(k) ? '' : 'off'}" data-k="${k}">${TK(k, 's')}</div>`).join('')}</div>
      <div style="min-height:56px;display:flex;gap:6px;justify-content:center;align-items:flex-end" id="stsel"></div>
