@@ -358,6 +358,25 @@ html,body{margin:0;height:100%;background:#050807;overflow:hidden;font-family:'H
 
 .cutin.sw .word{font-size:78px;top:52px;letter-spacing:3px}
 .cutin.sw .line{font-size:34px;top:150px}
+
+.badge.luck{background:linear-gradient(#2f8f5b,#1d6b42);color:#eafff1}
+.luckpanel{width:1000px;max-height:690px;overflow:auto}
+.luckpanel h2 .lp{font-size:18px;color:#7ee0a1;margin-left:10px}
+.luckgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.luckgrid .lk{text-align:left;border:none;border-radius:14px;padding:10px 12px;background:linear-gradient(#20352b,#132219);color:#fff;cursor:pointer;box-shadow:0 0 0 2px rgba(126,224,161,.35) inset,0 4px 0 #0a140f;display:flex;flex-direction:column;gap:6px;font-family:inherit}
+.luckgrid .lk:hover{box-shadow:0 0 0 2px #7ee0a1 inset,0 4px 0 #0a140f}
+.luckgrid .lk.off{opacity:.38;cursor:default}
+.luckgrid .lt{display:flex;align-items:center;gap:6px;font-size:18px}.luckgrid .lt b{flex:1}
+.luckgrid .li{font-size:22px}.luckgrid .lc{font-size:15px;font-weight:900;color:#7ee0a1}
+.luckgrid .ld{font-size:13px;line-height:1.4;color:#d8eadf;min-height:36px}
+.luckgrid .lti{font-size:12px;line-height:1.55;color:#bcd2c4}
+.luckgrid .lti span{display:inline-block;min-width:24px;text-align:center;border-radius:6px;font-weight:900;font-size:11px;margin-right:4px;padding:0 3px}
+.luckgrid .lti .t0{background:#2f8f5b}.luckgrid .lti .t1{background:#b8860b}.luckgrid .lti .t2{background:#c2185b}
+.luckfx{position:absolute;left:0;right:0;top:220px;text-align:center;z-index:55;pointer-events:none;text-shadow:0 4px 0 rgba(0,0,0,.6),0 0 24px rgba(0,0,0,.8)}
+.luckfx .lfw{font-size:76px;font-weight:900;-webkit-text-stroke:3px #10241a;letter-spacing:4px}
+.luckfx.t2 .lfw{font-size:78px;-webkit-text-stroke:3px #4a0f33;text-shadow:0 4px 0 rgba(0,0,0,.6),0 0 30px #ff4fb8,0 0 60px #ffd166}
+.luckfx .lfn{font-size:34px;font-weight:900;color:#fff;margin-top:4px}.luckfx .lfn span{font-size:24px;color:#ffe9a6}
+.luckfx .lfd{font-size:22px;font-weight:700;color:#d8eadf;margin-top:6px}
 </style>
 </head>
 <body>
@@ -889,6 +908,35 @@ const CHARS = [
     line: { win: 'あんたたち だぁい好き！', caught: '私のイカサマ 問題作！', falsely: 'かーんちがい！かーんちがい！', accuse: 'PON!PON!今日のイカサマはこの人！' } },
 ];
 
+// ===================== 運気 =====================
+const LUCK_MAX = 10, LUCK_START = 0;
+// tier: 0=ラッキー 1=超ラッキー 2=スペシャルラッキー
+const LUCK_TIER = ['ラッキー！', '超ラッキー！！', 'スペシャルラッキー！！！'];
+const LUCK = {
+  junpu: { name: '順風満帆', cost: 4, icon: '🍀', desc: 'テンパイに近い、まとまった配牌が来る', tiers: ['2シャンテン以内', '1シャンテン以内', '1シャンテン以内＋有効牌が来やすい'] },
+  dora: { name: 'ドラ祭り', cost: 3, icon: '🎆', desc: '配牌にドラが集まり、ツモでもドラを引きやすい', tiers: ['ドラ2枚', 'ドラ3枚', 'ドラ4枚＋ツモでも引きやすい'] },
+  ippatsu: { name: '一発の女神', cost: 4, icon: '⚡', desc: 'リーチした直後のツモで当たり牌を引きやすい。リーチできないと効果なし', tiers: ['一発ツモ70%', '一発ツモ85%', '一発ツモ95%'] },
+  yakuman: { name: '役満の予感', cost: 8, icon: '👑', desc: 'いろいろな役満の形がかなり出来上がった配牌が来る（どの役満かはお楽しみ）', tiers: ['あと3枚', 'あと2枚', 'あと1枚＋必要な牌を引きやすい'] },
+  kaze: { name: '風神の加護', cost: 2, icon: '🌪', desc: '自風・場風（役になる風牌）が集まる', tiers: ['役風の対子', '役風の刻子', '役風の刻子＋もう1種の対子'] },
+  isshoku: { name: '一色の調べ', cost: 4, icon: '🎨', desc: '1種類の色（萬子・筒子・索子のどれか）に偏った配牌とツモ', tiers: ['同じ色が9枚', '同じ色が10枚', '同じ色が11枚＋ツモも偏る'] },
+  yaochu: { name: '端っこ招き', cost: 2, icon: '🀄', desc: '1・9・字牌が集まる（国士無双や混老頭・チャンタ向き）', tiers: ['8枚', '9枚', '11枚＋ツモも偏る'] },
+  tanyao: { name: 'まんなか日和', cost: 3, icon: '☀', desc: '2〜8の数牌が集まる（タンヤオ・ピンフ向き）', tiers: ['10枚', '11枚', '13枚全部＋ツモも偏る'] },
+};
+const LUCK_ORDER = ['junpu', 'dora', 'ippatsu', 'yakuman', 'kaze', 'isshoku', 'yaochu', 'tanyao'];
+function rollLuckTier() { const r = Math.random(); return r < 0.06 ? 2 : r < 0.28 ? 1 : 0; }
+// 役満テンプレート(14枚の種類)。can(G)で作れるか判定
+const YAKUMAN_TPL = [
+  { name: '大三元', make: g => [31, 31, 31, 32, 32, 32, 33, 33, 33, ...g.randSet(), ...g.randPair()] },
+  { name: '四暗刻', make: g => { const ks = g.pickKinds(5); return [ks[0], ks[0], ks[0], ks[1], ks[1], ks[1], ks[2], ks[2], ks[2], ks[3], ks[3], ks[3], ks[4], ks[4]]; } },
+  { name: '字一色', make: g => { const ks = shuffle([27, 28, 29, 30, 31, 32, 33]).slice(0, 5); return [ks[0], ks[0], ks[0], ks[1], ks[1], ks[1], ks[2], ks[2], ks[2], ks[3], ks[3], ks[3], ks[4], ks[4]]; } },
+  { name: '国士無双', make: g => { const y = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33].filter(k => g.exists(k)); return y.concat([y[Math.floor(Math.random() * y.length)]]); }, ok: g => !g.sanma || true },
+  { name: '大四喜', make: g => [27, 27, 27, 28, 28, 28, 29, 29, 29, 30, 30, 30, ...g.randPair()] },
+  { name: '小四喜', make: g => { const w = shuffle([27, 28, 29, 30]); return [w[0], w[0], w[0], w[1], w[1], w[1], w[2], w[2], w[2], w[3], w[3], ...g.randSet()]; } },
+  { name: '緑一色', make: g => [19, 20, 21, 19, 20, 21, 23, 23, 23, 25, 25, 25, 32, 32] },
+  { name: '九蓮宝燈', make: g => { const b = g.sanma ? [9, 18][Math.floor(Math.random() * 2)] : [0, 9, 18][Math.floor(Math.random() * 3)]; const h = [0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 8].map(x => b + x); return h.concat([b + Math.floor(Math.random() * 9)]); } },
+  { name: '清老頭', make: g => { const t = shuffle([0, 8, 9, 17, 18, 26].filter(k => g.exists(k))).slice(0, 5); return [t[0], t[0], t[0], t[1], t[1], t[1], t[2], t[2], t[2], t[3], t[3], t[3], t[4], t[4]]; } },
+];
+
 const CHEAT_MAX = 10, CHARGE_TURNS = 10, STACK_COST = 8, STACK_BLUFF_COST = 2, STACK_MAX = 6;
 const TECH = {
   elevator: { name: 'エレベーター', cost: 3, vis: 0.3, desc: '次にツモる3枚の中から1枚を手牌と入れ替える' },
@@ -904,7 +952,7 @@ function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.fl
 class Game {
   constructor(S, io, players) {
     this.S = S; this.io = io;
-    this.P = players.map(pl => ({ ...pl, cheatPts: S.mode === 'cheat' ? (S.cheatStart ?? 2) : 0, charge: 0, score: S.players === 3 ? 35000 : 25000, hand: [], melds: [], river: [], discardKinds: new Set(), trust: [1, 1, 1, 1] }));
+    this.P = players.map(pl => ({ ...pl, cheatPts: S.mode === 'cheat' ? (S.cheatStart ?? 2) : 0, luckPts: S.luck ? LUCK_START : 0, charge: 0, score: S.players === 3 ? 35000 : 25000, hand: [], melds: [], river: [], discardKinds: new Set(), trust: [1, 1, 1, 1] }));
     // 見るからに怪しいキャラは最初から疑われやすい
     this.P.forEach((p, j) => { if (p.char && p.char.suspicious) this.P.forEach((q, i) => { if (i !== j) q.trust[j] = 1.6; }); });
     this.N = this.P.length; this.sanma = this.N === 3;
@@ -926,6 +974,7 @@ class Game {
   async run() {
     while (!this.over) {
       const r = await this.playHand();
+      if (this.S.luck) r.luckGains = this.luckAward(r);
       await this.io.handEnd(this, r);
       await this.afterHand(r);
     }
@@ -963,7 +1012,7 @@ class Game {
     const S = this.S;
     this.handNo++;
     for (const p of this.P) {
-      Object.assign(p, { hand: [], melds: [], river: [], discardKinds: new Set(), riichi: false, dbl: false, ippatsu: false, furitenTemp: false, riichiFuriten: false, plan: null, _planNext: null, stacked: 0, cheatedTurn: false, kita: 0, kitaIds: [], dead: false, lastOff: null });
+      Object.assign(p, { hand: [], melds: [], river: [], discardKinds: new Set(), riichi: false, dbl: false, ippatsu: false, furitenTemp: false, riichiFuriten: false, plan: null, _planNext: null, stacked: 0, cheatedTurn: false, kita: 0, kitaIds: [], dead: false, lastOff: null, luck: null });
     }
     this.anyCall = false; this.kanCount = 0; this.rinIdx = 0; this.lastDiscard = null; this.events = [];
     let pool = this.setupWall();
@@ -976,17 +1025,24 @@ class Game {
       const rs = new Set(reserved.flat());
       pool = pool.filter(id => !rs.has(id));
     }
+    // 王牌を先に確定（運気のドラ判定に使う）
+    this.dead = pool.splice(pool.length - 14, 14);
+    this.doraInd = [this.dead[4]];
+    this.uraInd = [this.dead[5]];
+    // 運気
+    if (S.luck) {
+      await this.luckPhase();
+      for (let s = 0; s < this.N; s++) if (this.P[s].luck) reserved[s] = reserved[s].concat(this.luckDeal(s, pool, 13 - reserved[s].length));
+    }
     for (let i = 0; i < this.N; i++) {
       const s = (this.dealer + i) % this.N;
       const need = 13 - reserved[s].length;
       this.P[s].hand = reserved[s].concat(pool.splice(0, need));
     }
-    this.dead = pool.splice(pool.length - 14, 14);
     this.live = pool;
-    this.doraInd = [this.dead[4]];
-    this.uraInd = [this.dead[5]];
     for (const p of this.P) this.sortHand(p);
     await this.io.handStart(this, stackInfo);
+    if (S.luck) for (let s = 0; s < this.N; s++) { const q = this.P[s]; if (q.luck && q.isHuman) await this.io.luckShow(this, s, { type: q.luck.type, tier: q.luck.tier, note: q.luck.note || '' }); }
     if (stackInfo) { const r = await this.stackAccuse(stackInfo); if (r) return r; }
 
     let turn = this.dealer, mode = 'draw';
@@ -999,6 +1055,7 @@ class Game {
       let drawn = null;
       if (mode === 'draw') {
         if (!this.live.length) return this.exhaustive();
+        if (p.luck) this.luckDraw(p);
         drawn = this.live.shift();
       } else if (mode === 'rinshan') {
         drawn = this.dead[this.rinIdx++];
@@ -1345,6 +1402,196 @@ class Game {
     return { type: 'draw', tenpai, deltas };
   }
 
+
+  // ===== 運気 =====
+  async luckPhase() {
+    for (let s = 0; s < this.N; s++) {
+      const p = this.P[s];
+      let type = null;
+      if (p.isHuman) type = await this.io.humanLuck(this, s);
+      else type = this.cpuLuck(p);
+      if (!type || !LUCK[type] || p.luckPts < LUCK[type].cost) continue;
+      p.luckPts -= LUCK[type].cost;
+      p.luck = { type, tier: rollLuckTier() };
+    }
+  }
+  cpuLuck(p) {
+    const pts = p.luckPts || 0;
+    if (pts >= 8 && Math.random() < 0.5) return 'yakuman';
+    if (pts < 2 || Math.random() > 0.35) return null;
+    const pref = { tsumiko: ['junpu', 'dora'], hattari: ['yakuman', 'dora'], megane: ['junpu', 'tanyao'], obaa: ['kaze', 'yaochu'], shinjin: ['tanyao', 'junpu'], kurofuku: ['ippatsu', 'isshoku'], mrbad: ['dora', 'kaze'], okosama: ['isshoku', 'kaze'], sunny: ['dora', 'ippatsu'], ponchi: ['ippatsu', 'yaochu'] }[p.icon] || [];
+    const cand = shuffle(pref.concat(LUCK_ORDER)).filter(t => t !== 'yakuman' && LUCK[t].cost <= pts);
+    return cand[0] || null;
+  }
+  // プールから条件に合う牌を取り出す
+  takeKinds(pool, kinds) {
+    const out = [];
+    for (const k of kinds) { const i = pool.findIndex(id => (id >> 2) === k); if (i < 0) continue; out.push(pool.splice(i, 1)[0]); }
+    return out;
+  }
+  takeWhere(pool, n, fn) {
+    const idx = []; pool.forEach((id, i) => { if (fn(id >> 2, id)) idx.push(i); });
+    shuffle(idx); const pick = idx.slice(0, n).sort((a, b) => b - a);
+    return pick.map(i => pool.splice(i, 1)[0]);
+  }
+  luckDeal(s, pool, room) {
+    const p = this.P[s], L = p.luck, t = L.tier;
+    if (room <= 0) return [];
+    const ex = k => this.kindExists(k);
+    const avail = k => pool.filter(id => (id >> 2) === k).length;
+    const lim = a => a.slice(0, room);
+    switch (L.type) {
+      case 'junpu': {
+        const target = [2, 1, 1][t], drop = [4, 3, 3][t];
+        const kindsInPool = pool.map(id => id >> 2);
+        let best = null, bestSh = 99;
+        for (let tries = 0; tries < 80 && bestSh > target; tries++) {
+          const tpl = this.randomComplete(pool); if (!tpl) break;
+          const h = shuffle(tpl.slice()).slice(0, 13);
+          for (let d = 0; d < drop; d++) h[d] = kindsInPool[Math.floor(Math.random() * kindsInPool.length)];
+          const c = new Array(34).fill(0); h.forEach(k => c[k]++);
+          if (c.some((n, k) => n > 0 && n > pool.filter(id => (id >> 2) === k).length)) continue;
+          const sh = shanten(c, 0);
+          if (sh < bestSh) { best = h; bestSh = sh; }
+        }
+        if (t === 2) L.bias = { q: 0.35, useful: true };
+        return best ? this.takeKinds(pool, lim(best)) : [];
+      }
+      case 'dora': {
+        const dk = this.doraInd.map(id => doraOf(id >> 2));
+        const n = [2, 3, 4][t];
+        const got = this.takeWhere(pool, Math.min(n, room), k => dk.includes(k));
+        if (t === 2) L.bias = { q: 0.3, kinds: dk };
+        return got;
+      }
+      case 'ippatsu': L.rate = [0.7, 0.85, 0.95][t]; return [];
+      case 'yakuman': {
+        const g = { sanma: this.sanma, exists: ex,
+          randSet: () => { for (let i = 0; i < 40; i++) { if (Math.random() < 0.5) { const k = Math.floor(Math.random() * 34); if (ex(k) && avail(k) >= 3) return [k, k, k]; } else { const b = [0, 9, 18][Math.floor(Math.random() * 3)] + Math.floor(Math.random() * 7); if (ex(b) && ex(b + 1) && ex(b + 2) && avail(b) && avail(b + 1) && avail(b + 2)) return [b, b + 1, b + 2]; } } return [31, 31, 31]; },
+          randPair: () => { for (let i = 0; i < 40; i++) { const k = Math.floor(Math.random() * 34); if (ex(k) && avail(k) >= 2) return [k, k]; } return [27, 27]; },
+          pickKinds: n => shuffle([...Array(34).keys()].filter(k => ex(k) && avail(k) >= 3)).slice(0, n) };
+        const opts = shuffle(YAKUMAN_TPL.slice());
+        for (const y of opts) {
+          const ks = y.make(g);
+          if (ks.length !== 14 || ks.some(k => k === undefined || !ex(k))) continue;
+          const need = {}; ks.forEach(k => need[k] = (need[k] || 0) + 1);
+          if (Object.keys(need).some(k => avail(+k) < need[k])) continue;
+          const miss = [3, 2, 1][t];
+          // 13枚の形から miss 枚を抜く（抜いた牌はツモで来るのを待つ）
+          const order = shuffle(ks.slice());
+          const keep = order.slice(0, 13 - miss), want = order.slice(13 - miss);
+          L.note = y.name; L.want = want;
+          L.bias = { q: [0.25, 0.35, 0.5][t], kinds: [...new Set(ks)], yakuman: ks };
+          return this.takeKinds(pool, lim(keep));
+        }
+        return [];
+      }
+      case 'kaze': {
+        const sw = 27 + this.seatWind(s), rw = 27 + this.roundWind;
+        const yak = [...new Set([sw, rw].concat(this.sanma ? [30] : []))].filter(k => avail(k) >= 2);
+        if (!yak.length) return [];
+        const a = yak[Math.floor(Math.random() * yak.length)];
+        let ks = t === 0 ? [a, a] : [a, a, a];
+        if (t === 2) { const others = [27, 28, 29, 30].filter(k => k !== a && avail(k) >= 2); if (others.length) { const b = others[Math.floor(Math.random() * others.length)]; ks.push(b, b); } }
+        L.bias = { q: [0.15, 0.2, 0.3][t], kinds: [a], cap: 3 };
+        return this.takeKinds(pool, lim(ks));
+      }
+      case 'isshoku': {
+        const suits = this.sanma ? [1, 2] : [0, 1, 2];
+        const su = suits[Math.floor(Math.random() * suits.length)];
+        L.note = ['萬子', '筒子', '索子'][su];
+        const n = [9, 10, 11][t];
+        L.bias = { q: [0.2, 0.3, 0.45][t], suit: su };
+        return this.takeWhere(pool, Math.min(n, room), k => k < 27 && suitOf(k) === su);
+      }
+      case 'yaochu': {
+        const n = [8, 9, 11][t];
+        L.bias = { q: [0.15, 0.25, 0.4][t], yaochu: true };
+        return this.takeWhere(pool, Math.min(n, room), k => isYaochu(k));
+      }
+      case 'tanyao': {
+        const n = [10, 11, 13][t];
+        L.bias = { q: [0.15, 0.25, 0.4][t], tanyao: true };
+        return this.takeWhere(pool, Math.min(n, room), k => !isYaochu(k));
+      }
+    }
+    return [];
+  }
+  randomComplete(pool) {
+    const avail = new Array(34).fill(0); pool.forEach(id => avail[id >> 2]++);
+    const ks = [];
+    for (let m = 0; m < 4; m++) {
+      let ok = false;
+      for (let i = 0; i < 30 && !ok; i++) {
+        if (Math.random() < 0.65) {
+          const b = [0, 9, 18][Math.floor(Math.random() * 3)] + Math.floor(Math.random() * 7);
+          if (avail[b] && avail[b + 1] && avail[b + 2] && this.kindExists(b) && this.kindExists(b + 1) && this.kindExists(b + 2)) { ks.push(b, b + 1, b + 2); avail[b]--; avail[b + 1]--; avail[b + 2]--; ok = true; }
+        } else {
+          const k = Math.floor(Math.random() * 34);
+          if (avail[k] >= 3 && this.kindExists(k)) { ks.push(k, k, k); avail[k] -= 3; ok = true; }
+        }
+      }
+      if (!ok) return null;
+    }
+    for (let i = 0; i < 40; i++) { const k = Math.floor(Math.random() * 34); if (avail[k] >= 2 && this.kindExists(k)) { ks.push(k, k); return ks; } }
+    return null;
+  }
+  // ツモの直前：運気で山の次の牌を入れ替える（まだ誰も見ていない牌同士なので矛盾しない）
+  luckDraw(p) {
+    const L = p.luck, live = this.live;
+    if (!L || p.dead || live.length < 2) return;
+    const swapIn = fn => {
+      const idx = []; for (let i = 1; i < live.length; i++) if (fn(live[i] >> 2, live[i])) idx.push(i);
+      if (!idx.length) return false;
+      const j = idx[Math.floor(Math.random() * idx.length)];
+      [live[0], live[j]] = [live[j], live[0]]; return true;
+    };
+    // 一発の女神：リーチ直後の1回目のツモ
+    if (L.type === 'ippatsu') {
+      if (p.riichi && p.ippatsu && !L.used) {
+        L.used = true;
+        if (Math.random() < L.rate) {
+          const w = waitsOf(toCounts(p.hand), p.melds.length);
+          if (w.length && !w.includes(live[0] >> 2)) swapIn(k => w.includes(k));
+        }
+      }
+      return;
+    }
+    const b = L.bias; if (!b || Math.random() >= b.q) return;
+    if (p.riichi) return;
+    const hc = toCounts(p.hand);
+    if (b.useful) {
+      const sh = shanten(hc, p.melds.length); if (sh <= 0) return;
+      const good = []; for (let k = 0; k < 34; k++) { if (hc[k] >= 4 || !this.kindExists(k)) continue; hc[k]++; if (shanten(hc, p.melds.length) < sh) good.push(k); hc[k]--; }
+      swapIn(k => good.includes(k));
+    } else if (b.yakuman) {
+      const need = {}; b.yakuman.forEach(k => need[k] = (need[k] || 0) + 1);
+      const miss = Object.keys(need).map(Number).filter(k => hc[k] < need[k]);
+      if (miss.length) swapIn(k => miss.includes(k));
+    } else if (b.kinds) swapIn(k => b.kinds.includes(k) && (!b.cap || hc[k] < b.cap));
+    else if (b.suit !== undefined) swapIn(k => k < 27 && suitOf(k) === b.suit);
+    else if (b.yaochu) swapIn(k => isYaochu(k));
+    else if (b.tanyao) swapIn(k => !isYaochu(k));
+  }
+  luckAward(r) {
+    const add = new Array(this.N).fill(0);
+    if (r.type === 'win') {
+      const big = r.res && r.res.base >= 2000;
+      if (!r.tsumo && r.from !== null && r.from !== undefined) add[r.from] += big ? 3 : 2;
+      if (r.tsumo && big) for (let i = 0; i < this.N; i++) if (i !== r.seat) add[i] += 1;
+    } else if (r.type === 'draw') {
+      for (let i = 0; i < this.N; i++) if (!r.tenpai.includes(i)) add[i] += 1;
+    }
+    if (r.type === 'win' || r.type === 'draw') add[this.ranking()[this.N - 1]] += 1;
+    const gains = [];
+    this.P.forEach((p, i) => {
+      if (p.luck) return; // 運気を使った局は貯まらない
+      const before = p.luckPts || 0; p.luckPts = Math.min(LUCK_MAX, before + add[i]);
+      if (p.luckPts > before) gains.push({ seat: i, n: p.luckPts - before });
+    });
+    return gains;
+  }
+
   // ===== イカサマ =====
   static stackCost(r) { return r.kinds && r.kinds.length ? STACK_COST : r.bluff ? STACK_BLUFF_COST : 0; }
   async stackPhase(pool) {
@@ -1599,7 +1846,7 @@ class Game {
   }
 }
 
-if (typeof module !== 'undefined' && typeof window === 'undefined') module.exports = { Game, AI, CHARS, TECH, evalWin, shanten, waitsOf, toCounts, tileName, decompose, doraOf, kindOf, isRedId, WIND_JP, isYaochu };
+if (typeof module !== 'undefined' && typeof window === 'undefined') module.exports = { Game, AI, CHARS, TECH, evalWin, shanten, waitsOf, toCounts, tileName, decompose, doraOf, kindOf, isRedId, WIND_JP, isYaochu, LUCK, LUCK_ORDER };
 
 // ===================== 牌・アバターの絵 =====================
 const MINCHO = "'Hiragino Mincho ProN','Yu Mincho','YuMincho','Noto Serif CJK JP','Noto Serif JP',serif";
@@ -2109,7 +2356,7 @@ const esc = s => String(s ?? '').replace(/[&<>"'`]/g, c => '&#' + c.charCodeAt(0
 const sleep = ms => new Promise(r => setTimeout(r, (typeof U !== 'undefined' && U.ff) ? Math.min(ms, 80) : ms));
 const DEF = { players: 4, mode: 'normal', length: 'east', naki: true, red: true, kuitan: true, cheatStart: 2, penalty: 4000, window: 3,
   speed: 'normal', showWaits: true, hint: true, autoWin: false, autoSkip: false, oneTap: false, bgm: true, se: true, voice: true,
-  myIcon: 'me_boy', opp: [], cutin: true };
+  myIcon: 'me_boy', opp: [], cutin: true, luck: true };
 let S = Object.assign({}, DEF);
 try { const sv = JSON.parse(localStorage.getItem('tsumikomi_settings') || 'null'); if (sv) S = Object.assign({}, DEF, sv); } catch (e) { }
 if (![0, 2, 4].includes(S.cheatStart)) S.cheatStart = 2;
@@ -2246,7 +2493,7 @@ function renderCard(s) {
     (s === HUMAN ? '' : `<div class="nm">${esc(p.name)}</div><div class="ttl">${p.char.title}</div>`) +
     `<div class="sc">${p.score.toLocaleString()}</div>` +
     (S.mode === 'cheat' && s === HUMAN ? `<div class="gauge" title="打牌するたびに溜まる">${[...Array(CHARGE_TURNS)].map((_, i) => `<i class="${i < (p.charge || 0) ? 'on' : ''}"></i>`).join('')}</div>` : '') +
-    `<div class="badges"><span class="badge w ${G.dealer === s ? 'dealer' : ''}">${WIND_JP[G.seatWind(s)]}${G.dealer === s ? '・親' : ''}</span>${p.riichi ? '<span class="badge riichi">リーチ</span>' : ''}${p.dead ? '<span class="badge dead">アガリ放棄</span>' : ''}${S.mode === 'cheat' && s === HUMAN ? `<span class="badge cheat" id="cb${s}">イカサマ${p.cheatPts ?? 0}pt</span>` : ''}</div>`;
+    `<div class="badges"><span class="badge w ${G.dealer === s ? 'dealer' : ''}">${WIND_JP[G.seatWind(s)]}${G.dealer === s ? '・親' : ''}</span>${p.riichi ? '<span class="badge riichi">リーチ</span>' : ''}${p.dead ? '<span class="badge dead">アガリ放棄</span>' : ''}${S.mode === 'cheat' && s === HUMAN ? `<span class="badge cheat" id="cb${s}">イカサマ${p.cheatPts ?? 0}pt</span>` : ''}${S.luck && s === HUMAN ? `<span class="badge luck">運気${p.luckPts ?? 0}pt${p.luck ? '・' + LUCK[p.luck.type].icon : ''}</span>` : ''}</div>`;
 }
 
 // 手牌解析(ヒント用)
@@ -2636,7 +2883,7 @@ const IO = {
         <div class="yakulist reveal">${yk}</div>
         <div class="points reveal-pts">${head}${r.res.limit ? r.res.limit + '　' : ''}${r.pts}点</div>
         ${deltaHTML(G, r.deltas)}
-        ${r.gains && r.gains.includes(HUMAN) ? `<div style="text-align:center;margin-top:10px;color:#c77dff;font-weight:700">放銃したのでイカサマポイント +1pt（反撃のチャンス）</div>` : ''}
+        ${r.gains && r.gains.includes(HUMAN) ? `<div style="text-align:center;margin-top:10px;color:#c77dff;font-weight:700">放銃したのでイカサマポイント +1pt（反撃のチャンス）</div>` : ''}${luckGainHTML(r)}
         <div style="text-align:center;margin-top:16px"><button class="btn gold" data-v="1">次へ</button></div></div>`);
       await revealResult(ov);
       await waitClick(ov, 'button'); ov.remove();
@@ -2647,7 +2894,7 @@ const IO = {
       const ov = overlay(`<div class="panel" style="min-width:640px"><h2>流局</h2>
         <div style="font-size:17px">テンパイ：${r.tenpai.length ? r.tenpai.map(s => G.P[s].name).join('、') : 'なし（全員ノーテン）'}</div>
         ${r.tenpai.filter(s => s !== HUMAN).map(s => `<div class="res-hand"><span style="width:110px">${G.P[s].name}</span>${G.P[s].hand.map(id => T(id, 'xs')).join('')}</div>`).join('')}
-        ${deltaHTML(G, r.deltas)}
+        ${deltaHTML(G, r.deltas)}${luckGainHTML(r)}
         <div style="text-align:center;margin-top:16px"><button class="btn gold">次へ</button></div></div>`);
       await waitClick(ov, 'button'); ov.remove();
       U.revealAll = false;
@@ -2670,6 +2917,8 @@ const IO = {
   },
   // ---- イカサマ ----
   humanStack(G, seat) { return stackUI(G); },
+  humanLuck(G, seat) { return luckUI(G); },
+  async luckShow(G, seat, info) { await luckShowFx(info); },
   // 指摘の受付: 画面には何も出さない(常時の指摘ボタンで押す)
   accuseWindow(G, target, info, humanSeats, cpuAcc, cpuTime) {
     const humanCan = Array.isArray(humanSeats) ? humanSeats.includes(HUMAN) : humanSeats >= 0;
@@ -2934,6 +3183,38 @@ function onCheatButton() {
 }
 
 // 積み込みフェーズ
+
+// ---------- 運気 ----------
+function luckGainHTML(r) {
+  const g = (r.luckGains || []).find(x => x.seat === HUMAN);
+  return g ? `<div style="text-align:center;margin-top:8px;color:#7ee0a1;font-weight:700">🍀 運気 +${g.n}pt（ついてない時ほど運気が貯まる）</div>` : '';
+}
+function luckUI(G) {
+  return new Promise(resolve => {
+    const p = G.P[HUMAN], pts = p.luckPts || 0;
+    const cheapest = Math.min(...LUCK_ORDER.map(t => LUCK[t].cost));
+    if (pts < cheapest) return resolve(null);
+    U.turnSeat = -1;
+    const ov = overlay(`<div class="panel luckpanel"><h2>運気を使う？ <span class="lp">🍀 運気 ${pts}pt（最大${LUCK_MAX}pt）</span></h2>
+      <div class="helptext" style="margin:0 auto 10px;text-align:center">選んだ運気はこの局だけ効きます。<b>他の人には分かりません</b>。発動時に<b style="color:#7ee0a1">ラッキー</b>・<b style="color:#ffd166">超ラッキー</b>・<b style="color:#ff8fd8">スペシャルラッキー</b>のどれかが出て、上ほど効果が強くなります。<br>運気を使った局は運気ポイントが貯まりません。</div>
+      <div class="luckgrid">${LUCK_ORDER.map(t => { const L = LUCK[t], ok = L.cost <= pts; return `<button class="lk ${ok ? '' : 'off'}" data-t="${t}" ${ok ? '' : 'disabled'}><div class="lt"><span class="li">${L.icon}</span><b>${L.name}</b><span class="lc">${L.cost}pt</span></div><div class="ld">${L.desc}</div><div class="lti">${L.tiers.map((x, i) => `<span class="t${i}">${['ラ', '超', 'SP'][i]}</span>${x}`).join('<br>')}</div></button>`; }).join('')}</div>
+      <div style="text-align:center;margin-top:12px"><button class="btn gray" id="lkNo">使わない</button></div></div>`);
+    ov.querySelectorAll('.lk:not(.off)').forEach(b => b.onclick = () => { Snd.se('select'); ov.remove(); resolve(b.dataset.t); });
+    ov.querySelector('#lkNo').onclick = () => { ov.remove(); resolve(null); };
+  });
+}
+async function luckShowFx(info) {
+  const L = LUCK[info.type]; if (!L) return;
+  const t = info.tier, col = ['#7ee0a1', '#ffd166', '#ff8fd8'][t];
+  Snd.se(t === 2 ? 'heart' : t === 1 ? 'rose' : 'ok');
+  const el = document.createElement('div'); el.className = 'luckfx t' + t;
+  el.innerHTML = `<div class="lfw" style="color:${col}">${LUCK_TIER[t]}</div><div class="lfn">${L.icon} ${L.name}${info.note ? `<span>（${info.note}）</span>` : ''}</div><div class="lfd">${L.tiers[t]}</div>`;
+  $('#fx').appendChild(el);
+  if (t === 2) heartFx(2400);
+  el.animate([{ transform: 'scale(.4)', opacity: 0 }, { transform: 'scale(1.08)', opacity: 1, offset: .15 }, { transform: 'scale(1)', opacity: 1, offset: .25 }, { opacity: 1, offset: .85 }, { opacity: 0, transform: 'translateY(-20px)' }], { duration: 2200 + t * 400, fill: 'forwards' });
+  await sleep(2200 + t * 400); el.remove();
+}
+
 function stackUI(G) {
   return new Promise(resolve => {
     U.turnSeat = -1;
@@ -3000,6 +3281,7 @@ function settingsHTML(inGame) {
   let h = `<h2>ルール設定</h2>`;
   if (!inGame) {
     h += `<h3>ルール</h3>` + segRow('人数', 'players', [[4, '4人麻雀'], [3, '3人麻雀（萬子なし・北抜き）']]) + segRow('長さ', 'length', [['east', '東風戦'], ['south', '半荘戦']]) + segRow('鳴き(ポン・チー)', 'naki', yn) + segRow('赤ドラ', 'red', yn) + segRow('喰いタン', 'kuitan', yn);
+    h += `<h3>運気（通常・イカサマ両方で使える）</h3>` + segRow('運気ポイント', 'luck', [[true, 'あり'], [false, 'なし']]);
     h += `<h3>イカサマ麻雀</h3>` + segRow('最初のポイント', 'cheatStart', [[0, '0pt'], [2, '2pt'], [4, '4pt']]) + segRow('罰符', 'penalty', [[2000, '2000'], [4000, '4000'], [8000, '8000']]) + segRow('指摘の受付', 'window', [[2, '2秒'], [3, '3秒'], [5, '5秒']]);
   }
   h += `<h3>遊びやすさ</h3>` + segRow('待ち牌の表示', 'showWaits', on) + segRow('おすすめ打牌', 'hint', on) + segRow('アガリ自動', 'autoWin', on) + segRow('鳴き確認', 'autoSkip', [[false, '聞く'], [true, '聞かない']]) + segRow('1タップで捨てる', 'oneTap', on) + segRow('CPUの速さ', 'speed', [['normal', 'ふつう'], ['fast', 'はやい']]);
@@ -3038,6 +3320,8 @@ function openHelp() {
    リーチ・ツモ・ロン・ポン・チー・カンはできるときだけボタンが出ます。テンパイ中は待ち牌と残り枚数が表示されます。<br>
    <b>アガリの条件</b>：4つの面子（同じ牌3枚か、続き番号3枚）＋雀頭（同じ牌2枚）を作り、役が1つ以上あること。迷ったら門前でリーチ！<br>
    <b>3人麻雀</b>：設定の「人数」で選べます。二萬〜八萬を抜いた108枚で遊び、チーはなし、北は役牌です。北を引いたら<b>北抜き</b>ボタンで横に抜くと、1枚ごとにドラ1つになり、代わりの牌を引けます（ツモアガリは2人から受け取る「ツモ損」ルール）。<br>
+   <b>運気</b>（設定でON/OFF）：ついていない時に貯まる運気ポイントで、局のはじめに<b>流れを呼び込めます</b>（最初0pt・最大10pt）。貯まり方：<b>ロンで放銃 +2pt</b>（満貫以上なら+3pt）、<b>満貫以上のツモをされる +1pt</b>、<b>流局でノーテン +1pt</b>、<b>局が終わってラス目 +1pt</b>。運気を使った局は貯まりません。<br>
+   使える運気：${LUCK_ORDER.map(t => `<b>${LUCK[t].icon}${LUCK[t].name}</b>（${LUCK[t].cost}pt）${LUCK[t].desc}`).join('／')}。発動すると自分にだけ<b>ラッキー／超ラッキー／スペシャルラッキー</b>が表示され、スペシャルほど強力です（スペシャルはたまにしか出ません）。<br>
    <b>イカサマ麻雀</b>：局のはじめにポイントがあれば<b>積み込み</b>で好きな牌を配牌に仕込めます。イカサマは<b>イカサマポイント</b>を消費します（最初2pt・最大10pt）。<b>積み込みは8pt</b>（最大6枚、タイミング失敗でもポイントは戻らない）なので半荘で1〜2回の大技。エレベーター・河拾い3pt、ぶっこ抜き5pt、ブラフ2ptです。ポイントは対局中に溜まります：<b>イカサマせずに10回打牌</b>（カードのゲージが満タン）、<b>ロンで放銃する</b>、<b>指摘を当てる</b>でそれぞれ+1pt。溜めて、ここぞという局で一気に使いましょう。手番外でも1巡に1回まで<b>河拾い</b>（直前の捨て牌をすり替える）・<b>山ずらし</b>（次にツモられる牌をずらす）・<b>ブラフ</b>が使えます（「イカサマ」ボタンから）。自分の番には1ターン1回まで<b>エレベーター</b>（次の山の牌と交換）、<b>ぶっこ抜き</b>（山から好きな牌を抜く）、<b>河拾い</b>（捨て牌を拾う）、<b>ブラフ</b>（フリだけ）ができます。<br>
    画面右の<b>「指摘」ボタン</b>はいつでも押せます。誰かの手がスッと動いたら、数秒以内に押すとその人を指摘します（ボタンは光らないので、自分の目で見抜いてください）。何も起きていないときに押すと、相手を選んで指摘しますが、その相手が何もしていなければ冤罪です。本当にイカサマなら相手から罰符をもらえて、相手はその局<b>アガリ放棄</b>（リーチ・鳴き・イカサマもできず、流局時はノーテン）。ブラフだったら指摘した側が罰符を払い、アガリ放棄になります。手が良いときは見逃す、という判断も大事です。CPUも積み込み・ブラフ・指摘をしてきます。キャラによってクセがあるので見抜いてください。</div>
    <h3>役の一覧</h3>${YAKU_HELP.map(([h, t]) => `<div class="row"><span class="lbl" style="width:60px;color:#ffd166">${h}</span><span style="flex:1;font-size:14px">${t}</span></div>`).join('')}
@@ -3174,7 +3458,7 @@ const dec = s => [...(s || '')].map(c => c.charCodeAt(0) - TB);
 const realSleep = ms => new Promise(r => setTimeout(r, ms));
 const cleanName = s => String(s || '').replace(/[<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 10);
 const charOf = icon => CHARS.find(c => c.id === icon) || Object.assign({ id: icon, name: 'プレイヤー', title: '' }, PLAYER_CHARS.find(c => c.id === icon) || {});
-const RULE_KEYS = ['players', 'mode', 'length', 'naki', 'red', 'kuitan', 'cheatStart', 'penalty', 'window'];
+const RULE_KEYS = ['players', 'mode', 'length', 'naki', 'red', 'kuitan', 'cheatStart', 'penalty', 'window', 'luck'];
 const rulesNow = () => { const r = {}; for (const k of RULE_KEYS) r[k] = S[k]; return r; };
 const validIcon = i => (AVATARS[i] || CHARS.some(c => c.id === i)) ? i : 'me_boy';
 function myOnlineName() { let n = ''; try { n = localStorage.getItem('tsumikomi_name') || ''; } catch (e) { } return cleanName(n) || (charOf(S.myIcon).name || 'プレイヤー'); }
@@ -3187,7 +3471,7 @@ function snap(G) {
     P: G.P.map(p => ({
       sc: p.score, h: enc(p.hand), m: p.melds.map(m => [m.type, enc(m.tiles), m.calledId ?? -1, m.from || 0, m.added ?? -1]),
       r: enc(p.river.map(x => x.id)), rf: p.river.map(x => (x.riichi ? 1 : 0) | (x.called ? 2 : 0)).join(''),
-      dk: enc([...(p.discardKinds || [])]), ri: p.riichi ? 1 : 0, cp: p.cheatPts || 0, ch: p.charge || 0,
+      dk: enc([...(p.discardKinds || [])]), ri: p.riichi ? 1 : 0, cp: p.cheatPts || 0, lp: p.luckPts || 0, lk: p.luck ? p.luck.type : '', ch: p.charge || 0,
       ki: enc(p.kitaIds || []), dr: (p.drawn === null || p.drawn === undefined) ? -1 : p.drawn, ct: p.cheatedTurn ? 1 : 0, dd: p.dead ? 1 : 0, lo: (p.lastOff === undefined || p.lastOff === null) ? -99 : p.lastOff,
     })),
   };
@@ -3441,6 +3725,8 @@ function makeHostIO() {
     if (!v || !Array.isArray(v.kinds)) return { kinds: [], bluff: false, timing: 1 };
     return { kinds: v.kinds.filter(k => Number.isInteger(k) && k >= 0 && k < 34).slice(0, STACK_MAX), bluff: !!v.bluff, timing: Math.max(0, Math.min(1, +v.timing || 0)) };
   });
+  io.humanLuck = (G, seat) => seat === 0 ? L.humanLuck(G, seat) : Host.ask(seat, 'humanLuck', [seat], () => null, 60000).then(v => (typeof v === 'string' && LUCK[v]) ? v : null);
+  io.luckShow = (G, seat, info) => seat === 0 ? L.luckShow(G, seat, info) : Host.ask(seat, 'luckShow', [seat, info], () => 1, 8000).then(() => {});
   io.handEnd = async (G, r) => { const ps = Host.remoteSeats().map(s => Host.ask(s, 'handEnd', [r], () => 1, 90000)); await Promise.all([L.handEnd(G, r), ...ps]); };
   io.gameOver = async G => { bc('gameOver', []); await L.gameOver(G); };
   io.cheatPassed = async (G, t, info) => { bc('cheatPassed', [t, info]); await L.cheatPassed(G, t, info); };
@@ -3515,7 +3801,7 @@ const Guest = {
       p.melds = q.m.map(([type, t, c, from, added]) => { const m = { type, tiles: dec(t), from }; if (c >= 0) m.calledId = c; if (added >= 0) m.added = added; return m; });
       p.river = dec(q.r).map((id, i) => { const f = +q.rf[i] || 0; return { id, riichi: !!(f & 1), called: !!(f & 2) }; });
       p.discardKinds = new Set(dec(q.dk)); p.riichi = !!q.ri; p.cheatPts = q.cp; p.charge = q.ch;
-      p.kitaIds = dec(q.ki); p.kita = p.kitaIds.length; p.drawn = q.dr < 0 ? null : q.dr; p.cheatedTurn = !!q.ct; p.dead = !!q.dd; p.lastOff = q.lo === -99 ? null : q.lo;
+      p.kitaIds = dec(q.ki); p.kita = p.kitaIds.length; p.drawn = q.dr < 0 ? null : q.dr; p.cheatedTurn = !!q.ct; p.dead = !!q.dd; p.lastOff = q.lo === -99 ? null : q.lo; p.luckPts = q.lp || 0; p.luck = q.lk ? { type: q.lk } : null;
     });
   },
   remap(fn, a) {
@@ -3528,7 +3814,9 @@ const Guest = {
       case 'humanRon': return [0, a[1], a[2]];
       case 'humanCall': return [0, a[1], a[2]];
       case 'humanStack': return [0];
-      case 'handEnd': { const r = Object.assign({}, a[0]); r.seat = L(r.seat); if (r.from !== null && r.from !== undefined) r.from = L(r.from); for (const k of ['winners', 'tenpai', 'gains']) if (r[k]) r[k] = r[k].map(L); r.deltas = reorder(r.deltas); return [r]; }
+      case 'humanLuck': return [0];
+      case 'luckShow': return [0, a[1]];
+      case 'handEnd': { const r = Object.assign({}, a[0]); r.seat = L(r.seat); if (r.from !== null && r.from !== undefined) r.from = L(r.from); for (const k of ['winners', 'tenpai', 'gains']) if (r[k]) r[k] = r[k].map(L); r.deltas = reorder(r.deltas); if (r.luckGains) r.luckGains = r.luckGains.map(g => ({ seat: L(g.seat), n: g.n })); return [r]; }
       case 'cheatPassed': return [L(a[0]), a[1]];
       case 'accuseResult': return [Object.assign({}, a[0], { target: L(a[0].target), accuser: L(a[0].accuser) })];
       case 'cheatAnim': return [L(a[0]), a[1]];
@@ -3638,7 +3926,7 @@ const Lobby = {
         const r = L.rules || {};
         const inSeat = (L.seats || []).some(s => s.p === Net.myPeer);
         body = `<div class="online-code">${esc(Net.code)}</div>${this.seatsHTML(L.seats || [], r.players === 3 ? 3 : 4, Net.myPeer)}
-          <div style="text-align:center;color:#cfe0d8">${r.players === 3 ? '3人麻雀' : '4人麻雀'}・${r.mode === 'cheat' ? 'イカサマ麻雀' : '通常麻雀'}・${r.length === 'south' ? '半荘戦' : '東風戦'}・鳴き${r.naki ? 'あり' : 'なし'}・赤ドラ${r.red ? 'あり' : 'なし'}</div>
+          <div style="text-align:center;color:#cfe0d8">${r.players === 3 ? '3人麻雀' : '4人麻雀'}・${r.mode === 'cheat' ? 'イカサマ麻雀' : '通常麻雀'}・${r.length === 'south' ? '半荘戦' : '東風戦'}・鳴き${r.naki ? 'あり' : 'なし'}・赤ドラ${r.red ? 'あり' : 'なし'}・運気${r.luck === false ? 'なし' : 'あり'}</div>
           <div style="text-align:center;font-size:18px;margin-top:14px;color:#ffd166">${L.playing ? '対局中です。終わるまでお待ちください' : inSeat ? 'ホストが対局を始めるのを待っています…' : '席に入っています…'}</div>`;
       }
       P.innerHTML = `<h2>友達と遊ぶ（参加）</h2>${body}<div style="text-align:center;margin-top:16px"><button class="btn gray small" id="lbLeave">部屋を出る</button></div>`;
